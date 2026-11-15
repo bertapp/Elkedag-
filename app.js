@@ -1,7 +1,7 @@
 // Elke Dag – app om dagelijkse gezonde gewoontes op te volgen.
 // Alles blijft op de telefoon zelf: gewoontes en vinkjes in localStorage, foto's in IndexedDB.
 
-const VERSION = 10;
+const VERSION = 11;
 const PREVIEW = !!window.PREVIEW; // voorbeeldversie: geen agenda-bestand, meldingen of kopieën
 const $ = s => document.querySelector(s);
 const main = $('#main');
@@ -360,17 +360,20 @@ function editor(h) {
     <div><label for="n-${h.id}">Wat</label><input type="text" id="n-${h.id}" class="hn" value="${esc(h.name)}"></div>
     <div class="row"><div><label for="t-${h.id}">Hoe laat</label><input type="time" id="t-${h.id}" class="ht" value="${h.time}"></div>
       ${h.id !== 'new' ? '<div style="flex:0 0 auto"><button class="btn danger del">Wis</button></div>' : ''}</div>
-    <div><label>Op welke dagen</label><div class="chips">${ALL_DAYS.map(d => `<button class="chip ${h.days.includes(d) ? 'on' : ''}" data-d="${d}" aria-pressed="${h.days.includes(d)}">${SHORT[d]}</button>`).join('')}</div>
+    ${planEditor(h, 'g')}
+    <div><label>Kleur</label><div class="swatches">${COLORS.map(c => `<button class="sw ${h.color === c ? 'on' : ''}" data-c="${c}" style="--c:var(--c-${c})" aria-label="${c}"></button>`).join('')}</div></div>
+    <div><label>Icoon</label><div class="icons">${ICONS.map(i => `<button class="ic ${h.icon === i ? 'on' : ''}" data-i="${i}">${i}</button>`).join('')}</div></div></div>`;
+}
+function planEditor(h, p) {
+  return `    <div><label>Op welke dagen</label><div class="chips">${ALL_DAYS.map(d => `<button class="chip ${h.days.includes(d) ? 'on' : ''}" data-d="${d}" aria-pressed="${h.days.includes(d)}">${SHORT[d]}</button>`).join('')}</div>
       <div class="quick"><button data-q="all">Elke dag</button><button data-q="week">Weekdagen</button><button data-q="weekend">Weekend</button></div></div>
-    <div class="row"><div><label for="s-${h.id}">Vanaf</label><input type="date" id="s-${h.id}" class="hs" value="${h.start}"></div>
-      <div><label for="e-${h.id}">Hoe lang</label><select id="e-${h.id}" class="he">
+    <div class="row"><div><label for="s-${p}${h.id}">Vanaf</label><input type="date" id="s-${p}${h.id}" class="hs" value="${h.start}"></div>
+      <div><label for="e-${p}${h.id}">Hoe lang</label><select id="e-${p}${h.id}" class="he">
         <option value="never" ${h.endType === 'never' ? 'selected' : ''}>Altijd</option>
         <option value="until" ${h.endType === 'until' ? 'selected' : ''}>Tot een datum</option>
         <option value="count" ${h.endType === 'count' ? 'selected' : ''}>Aantal keer</option></select></div></div>
-    ${h.endType === 'until' ? `<div><label for="u-${h.id}">Tot en met</label><input type="date" id="u-${h.id}" class="hu" value="${h.until || ''}" min="${h.start}"></div>` : ''}
-    ${h.endType === 'count' ? `<div><label for="c-${h.id}">Hoeveel keer in totaal</label><input type="number" inputmode="numeric" min="1" max="999" id="c-${h.id}" class="hc" value="${h.count || ''}" placeholder="bv. 30"></div>` : ''}
-    <div><label>Kleur</label><div class="swatches">${COLORS.map(c => `<button class="sw ${h.color === c ? 'on' : ''}" data-c="${c}" style="--c:var(--c-${c})" aria-label="${c}"></button>`).join('')}</div></div>
-    <div><label>Icoon</label><div class="icons">${ICONS.map(i => `<button class="ic ${h.icon === i ? 'on' : ''}" data-i="${i}">${i}</button>`).join('')}</div></div></div>`;
+    ${h.endType === 'until' ? `<div><label for="u-${p}${h.id}">Tot en met</label><input type="date" id="u-${p}${h.id}" class="hu" value="${h.until || ''}" min="${h.start}"></div>` : ''}
+    ${h.endType === 'count' ? `<div><label for="c-${p}${h.id}">Hoeveel keer in totaal</label><input type="number" inputmode="numeric" min="1" max="999" id="c-${p}${h.id}" class="hc" value="${h.count || ''}" placeholder="bv. 30"></div>` : ''}`;
 }
 let draft = null;
 function renderHabits() {
@@ -386,9 +389,13 @@ function renderHabits() {
   if (PREVIEW) html += `<div class="card"><b>Herinneringen en reservekopie</b>
       <p class="small" style="margin-bottom:0">Dit is de voorbeeldversie. Herinneringen in je agenda, meldingen en een reservekopie werken pas in de echte app op je beginscherm.</p></div>`;
   else html += `<div class="h2">Herinneringen</div><div class="card stack">
-      <p class="small" style="margin:0">Zet je gewoontes in de agenda van je telefoon. Die stuurt je dan op de gekozen dagen en het juiste uur een berichtje, ook als deze app dicht is. Doe dit opnieuw als je iets verandert.</p>
-      <div class="small" style="background:var(--bg);border-radius:12px;padding:10px 12px"><b style="color:var(--ink)">Dit komt in je agenda:</b><br>${sortedHabits().filter(h => !finished(h)).map(h => `${h.icon} ${esc(h.name)}: ${planText(h)}`).join('<br>') || 'Niets: geen lopende gewoontes.'}</div>
-      <button class="btn" id="ics">📆 Zet herinneringen in mijn agenda</button>
+      <p class="small" style="margin:0">Kies per gewoonte op welke dagen en hoe lang, en zet ze dan in de agenda van je telefoon. Die stuurt je op het juiste uur een berichtje, ook als deze app dicht is.</p>
+    </div>
+    ${sortedHabits().map(h => `<div class="card stack" data-plan="${h.id}" style="--hc:${col(h)}">
+      <div class="hrow"><div class="icon">${h.icon}</div><div style="flex:1;min-width:0"><b>${esc(h.name)}</b><div class="small">${finished(h) ? '✓ afgelopen · ' : ''}${planText(h)}</div></div></div>
+      ${planEditor(h, 'r')}
+      <button class="btn ics1" data-id="${h.id}" ${finished(h) ? 'disabled style="opacity:.5"' : ''}>📆 In mijn agenda zetten</button></div>`).join('')}
+    <div class="card stack">
       <button class="btn ghost" id="notif">🔔 Meldingen in de app toestaan</button>
       <p class="small" id="notifState" style="margin:0"></p></div>
     <div class="h2">Reservekopie</div><div class="card stack">
@@ -406,6 +413,26 @@ function renderHabits() {
     hn.oninput = e => { h.name = e.target.value; };
     hn.onchange = e => { h.name = e.target.value.trim() || h.name; if (id !== 'new') { save(); render(); } };
     el.querySelector('.ht').onchange = e => { if (e.target.value) { h.time = e.target.value; if (id !== 'new') { save(); render(); } } };
+    bindPlan(el, h, id);
+    el.querySelectorAll('.sw').forEach(b => b.onclick = () => { h.color = b.dataset.c; if (id !== 'new') save(); render(); });
+    el.querySelectorAll('.ic').forEach(b => b.onclick = () => { h.icon = b.dataset.i; if (id !== 'new') save(); render(); });
+    const del = el.querySelector('.del');
+    if (del) del.onclick = () => {
+      if (del.dataset.sure) { habits = habits.filter(x => x !== h); openId = null; save(); render(); return; }
+      del.dataset.sure = '1'; del.textContent = 'Zeker wissen?';
+      setTimeout(() => { delete del.dataset.sure; del.textContent = 'Wis'; }, 3000);
+    };
+  });
+  main.querySelectorAll('.card[data-plan]').forEach(el => { const h = habits.find(x => x.id === el.dataset.plan); bindPlan(el, h, h.id); });
+  $('#nameEdit').onchange = e => { const v = e.target.value.trim(); if (v) { NAME = v; store.set('name', v); } };
+  $('#add').onclick = () => {
+    const name = draft.name.trim(); if (!name) { $('#n-new').focus(); return; }
+    habits.push({ ...draft, id: uid(), name, created: dayKey() }); draft = null; demoLog.cache = null; save(); render();
+  };
+  if (!PREVIEW) bindTools();
+}
+
+function bindPlan(el, h, id) {
     const upd = () => { if (id !== 'new') { save(); demoLog.cache = null; } render(); };
     el.querySelectorAll('.chip').forEach(b => b.onclick = () => {
       const d = Number(b.dataset.d);
@@ -417,25 +444,10 @@ function renderHabits() {
     el.querySelector('.he').onchange = e => { h.endType = e.target.value; if (h.endType === 'until' && !h.until) h.until = dayKey(addDays(new Date(h.start + 'T12:00'), 29)); if (h.endType === 'count' && !h.count) h.count = 30; upd(); };
     const hu = el.querySelector('.hu'); if (hu) hu.onchange = e => { if (e.target.value) { h.until = e.target.value; upd(); } };
     const hc = el.querySelector('.hc'); if (hc) hc.onchange = e => { const v = parseInt(e.target.value, 10); if (v > 0) { h.count = v; upd(); } };
-    el.querySelectorAll('.sw').forEach(b => b.onclick = () => { h.color = b.dataset.c; if (id !== 'new') save(); render(); });
-    el.querySelectorAll('.ic').forEach(b => b.onclick = () => { h.icon = b.dataset.i; if (id !== 'new') save(); render(); });
-    const del = el.querySelector('.del');
-    if (del) del.onclick = () => {
-      if (del.dataset.sure) { habits = habits.filter(x => x !== h); openId = null; save(); render(); return; }
-      del.dataset.sure = '1'; del.textContent = 'Zeker wissen?';
-      setTimeout(() => { delete del.dataset.sure; del.textContent = 'Wis'; }, 3000);
-    };
-  });
-  $('#nameEdit').onchange = e => { const v = e.target.value.trim(); if (v) { NAME = v; store.set('name', v); } };
-  $('#add').onclick = () => {
-    const name = draft.name.trim(); if (!name) { $('#n-new').focus(); return; }
-    habits.push({ ...draft, id: uid(), name, created: dayKey() }); draft = null; demoLog.cache = null; save(); render();
-  };
-  if (!PREVIEW) bindTools();
 }
 
 function bindTools() {
-  $('#ics').onclick = downloadIcs;
+  main.querySelectorAll('.ics1').forEach(b => b.onclick = () => downloadIcs([habits.find(x => x.id === b.dataset.id)]));
   $('#notif').onclick = askNotif;
   $('#notifState').textContent = notifStateText();
   $('#export').onclick = () => download('elkedag-kopie-' + dayKey() + '.json', JSON.stringify({ name: NAME, habits, log }, null, 1), 'application/json');
@@ -456,12 +468,12 @@ function download(name, text, type) {
 }
 
 // Agenda-bestand (.ics): elke gewoonte als terugkerende afspraak (gekozen dagen, start en einde) van 5 min met een melding op het uur zelf.
-function downloadIcs() {
-  if (!habits.length) return;
+function downloadIcs(list = habits) {
+  if (!list.length) return;
   const stamp = new Date().toISOString().replace(/[-:]/g, '').slice(0, 15) + 'Z';
   const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Elke Dag//NL', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH'];
   const BY = ['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA'];
-  for (const h of habits) {
+  for (const h of list) {
     // eerste geplande dag vanaf vandaag (geen afspraken in het verleden)
     let first = addDays(new Date(Math.max(new Date(h.start + 'T12:00'), addDays(new Date(), 0))), 0);
     for (let i = 0; i < 7 && !h.days.includes(first.getDay()); i++) first = addDays(first, 1);
@@ -480,7 +492,7 @@ function downloadIcs() {
       'BEGIN:VALARM', 'ACTION:DISPLAY', `DESCRIPTION:${icsEsc(text)}`, 'TRIGGER:PT0M', 'END:VALARM', 'END:VEVENT');
   }
   lines.push('END:VCALENDAR');
-  download('elkedag-herinneringen.ics', lines.join('\r\n'), 'text/calendar');
+  download(list.length === 1 ? `elkedag-${list[0].name.replace(/[^\w-]+/g, '-').toLowerCase()}.ics` : 'elkedag-herinneringen.ics', lines.join('\r\n'), 'text/calendar');
 }
 function icsEsc(s) { return s.replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\n/g, '\\n'); }
 
