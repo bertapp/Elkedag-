@@ -415,8 +415,8 @@ async function askNotif() {
 async function notify(title, body) {
   try {
     const reg = await navigator.serviceWorker?.ready;
-    if (reg) return reg.showNotification(title, { body, icon: 'icon-192.png', badge: 'icon-192.png', tag: title });
-    new Notification(title, { body, icon: 'icon-192.png' });
+    if (reg) return reg.showNotification(title, { body, icon: 'vlam-192.png', badge: 'vlam-192.png', tag: title });
+    new Notification(title, { body, icon: 'vlam-192.png' });
   } catch { }
 }
 function checkReminders() {
