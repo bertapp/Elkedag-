@@ -1,6 +1,7 @@
 // Elke Dag – app om dagelijkse gezonde gewoontes op te volgen.
 // Alles blijft op de telefoon zelf: gewoontes en vinkjes in localStorage, foto's in IndexedDB.
 
+const VERSION = 8;
 const PREVIEW = !!window.PREVIEW; // voorbeeldversie: geen agenda-bestand, meldingen of kopieën
 const $ = s => document.querySelector(s);
 const main = $('#main');
@@ -386,6 +387,7 @@ function renderHabits() {
       <p class="small" style="margin-bottom:0">Dit is de voorbeeldversie. Herinneringen in je agenda, meldingen en een reservekopie werken pas in de echte app op je beginscherm.</p></div>`;
   else html += `<div class="h2">Herinneringen</div><div class="card stack">
       <p class="small" style="margin:0">Zet je gewoontes in de agenda van je telefoon. Die stuurt je dan op de gekozen dagen en het juiste uur een berichtje, ook als deze app dicht is. Doe dit opnieuw als je iets verandert.</p>
+      <div class="small" style="background:var(--bg);border-radius:12px;padding:10px 12px"><b style="color:var(--ink)">Dit komt in je agenda:</b><br>${sortedHabits().filter(h => !finished(h)).map(h => `${h.icon} ${esc(h.name)}: ${planText(h)}`).join('<br>') || 'Niets: geen lopende gewoontes.'}</div>
       <button class="btn" id="ics">📆 Zet herinneringen in mijn agenda</button>
       <details class="small"><summary style="cursor:pointer;font-weight:700;color:var(--brand-2)">Herinneringen weer uit je agenda halen?</summary>
         <p style="margin:8px 0 0">De app kan je agenda zelf niet aanpassen, maar het gaat zo, per gewoonte:<br>
@@ -398,7 +400,8 @@ function renderHabits() {
       <p class="small" style="margin:0">Alles staat enkel op deze telefoon. Bewaar af en toe een kopie (zonder foto's).</p>
       <button class="btn ghost" id="export">💾 Kopie bewaren</button>
       <button class="btn ghost" id="import">📂 Kopie terugzetten</button>
-      <input type="file" id="importFile" accept="application/json" hidden></div>`;
+      <input type="file" id="importFile" accept="application/json" hidden></div>
+    <p class="small" style="text-align:center;margin:4px 0 0">Elke Dag · versie ${VERSION}</p>`;
   main.innerHTML = html;
 
   main.querySelectorAll('.card[data-id]').forEach(el => {
