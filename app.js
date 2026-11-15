@@ -6,6 +6,8 @@ const $ = s => document.querySelector(s);
 const main = $('#main');
 const COLORS = ['teal', 'coral', 'indigo', 'amber', 'rose', 'sky'];
 const ICONS = ['💪', '🚶', '🏃', '🧘', '🦵', '💧', '🍎', '🥦', '😴', '🫁', '📖', '🦷', '💊', '☀️'];
+const ALL_DAYS = [1, 2, 3, 4, 5, 6, 0]; // ma t/m zo
+const SHORT = ['zo', 'ma', 'di', 'wo', 'do', 'vr', 'za'];
 const DAYS = ['zondag', 'maandag', 'dinsdag', 'woensdag', 'donderdag', 'vrijdag', 'zaterdag'];
 
 // ---------- opslag ----------
@@ -16,7 +18,7 @@ const store = {
 let NAME = store.get('name', '');
 let habits = store.get('habits', null);
 if (!habits) habits = [{ id: uid(), name: '1 minuut armspieroefeningen', time: '10:00', color: 'teal', icon: '💪' }];
-habits.forEach((h, i) => { h.color = h.color || COLORS[i % COLORS.length]; h.icon = h.icon || ICONS[i % ICONS.length]; h.created = h.created || dayKey(); });
+habits.forEach((h, i) => { h.color = h.color || COLORS[i % COLORS.length]; h.icon = h.icon || ICONS[i % ICONS.length]; h.created = h.created || dayKey(); h.days = h.days || [...ALL_DAYS]; h.start = h.start || h.created; h.endType = h.endType || 'never'; });
 let log = store.get('log', {});          // { 'YYYY-MM-DD': { habitId: { at, photo } } }
 let notified = store.get('notified', {}); // { 'YYYY-MM-DD': [habitId] }
 let demo = false;                         // voorbeeldgegevens tonen in het overzicht
@@ -63,11 +65,53 @@ function shrink(file, max = 1400) {
   });
 }
 
+// ---------- planning ----------
+// Een gewoonte is gepland op dag d als d na de startdatum valt, op een gekozen weekdag,
+// en (afhankelijk van het einde) vóór de einddatum of binnen het gekozen aantal keer.
+function occurrence(h, d) { // hoeveelste geplande keer is dag d (vanaf de start)?
+  let n = 0, x = new Date(h.start + 'T12:00');
+  while (x <= d) { if (h.days.includes(x.getDay())) n++; x = addDays(x, 1); }
+  return n;
+}
+function scheduled(h, d) {
+  const k = dayKey(d);
+  if (!h.days.includes(d.getDay())) return false;
+  if (demo) return true;
+  if (k < h.start) return false;
+  if (h.endType === 'until' && h.until && k > h.until) return false;
+  if (h.endType === 'count' && h.count && occurrence(h, d) > h.count) return false;
+  return true;
+}
+function finished(h) {
+  const t = dayKey();
+  if (h.endType === 'until' && h.until && h.until < t) return true;
+  if (h.endType === 'count' && h.count && occurrence(h, addDays(new Date(), 0)) >= h.count && !scheduled(h, addDays(new Date(), 0))) return true;
+  return false;
+}
+function daysText(days) {
+  if (days.length === 7) return 'elke dag';
+  const s = [...days].sort((a, b) => ((a + 6) % 7) - ((b + 6) % 7));
+  if (s.length === 5 && !s.includes(0) && !s.includes(6)) return 'weekdagen';
+  if (s.length === 2 && s.includes(0) && s.includes(6)) return 'in het weekend';
+  return s.map(d => SHORT[d]).join(', ');
+}
+function niceDate(k) { return new Date(k + 'T12:00').toLocaleDateString('nl-BE', { day: 'numeric', month: 'short', year: k.slice(0, 4) === String(new Date().getFullYear()) ? undefined : 'numeric' }); }
+function planText(h) {
+  let t = `${daysText(h.days)} om ${hourText(h.time)}`;
+  if (h.start > dayKey()) t += ` · vanaf ${niceDate(h.start)}`;
+  if (h.endType === 'until' && h.until) t += ` · tot ${niceDate(h.until)}`;
+  if (h.endType === 'count' && h.count) {
+    const done = Math.min(h.count, occurrence(h, addDays(new Date(), -1)) );
+    t += ` · ${h.count} keer (nog ${Math.max(0, h.count - done)})`;
+  }
+  return t;
+}
+
 // ---------- statistiek ----------
 function L() { return demo ? demoLog() : log; }
 function isDone(lg, d, id) { return !!lg[dayKey(d)]?.[id]; }
 function dayRate(lg, d) {
-  const hs = habits.filter(h => h.created <= dayKey(d) || demo);
+  const hs = habits.filter(h => scheduled(h, d));
   if (!hs.length) return null;
   return hs.filter(h => isDone(lg, d, h.id)).length / hs.length;
 }
@@ -77,22 +121,28 @@ function rangeRate(lg, from, days, id) {
     const d = addDays(from, i);
     for (const h of habits) {
       if (id && h.id !== id) continue;
-      if (!demo && h.created > dayKey(d)) continue;
+      if (!scheduled(h, d)) continue;
       tot++; if (isDone(lg, d, h.id)) done++;
     }
   }
   return tot ? done / tot : 0;
 }
+// reeks = aantal geplande dagen na elkaar gedaan; dagen zonder planning tellen niet mee en breken niets
 function streak(lg, id) {
+  const h = habits.find(x => x.id === id); if (!h) return 0;
   let d = addDays(new Date(), 0), n = 0;
   if (!isDone(lg, d, id)) d = addDays(d, -1); // vandaag nog niet gedaan breekt de reeks niet
-  while (isDone(lg, d, id)) { n++; d = addDays(d, -1); }
+  for (let i = 0; i < 800; i++, d = addDays(d, -1)) {
+    if (isDone(lg, d, id)) n++;
+    else if (scheduled(h, d)) break;
+  }
   return n;
 }
 function bestStreak(lg, id) {
   const keys = Object.keys(lg).sort(); if (!keys.length) return 0;
   let best = 0, cur = 0, d = new Date(keys[0] + 'T12:00'); const end = addDays(new Date(), 0);
-  while (d <= end) { if (isDone(lg, d, id)) { cur++; best = Math.max(best, cur); } else cur = 0; d = addDays(d, 1); }
+  const h = habits.find(x => x.id === id); if (!h) return 0;
+  while (d <= end) { if (isDone(lg, d, id)) { cur++; best = Math.max(best, cur); } else if (scheduled(h, d)) cur = 0; d = addDays(d, 1); }
   return best;
 }
 function totalDone(lg) { return Object.values(lg).reduce((a, v) => a + Object.keys(v).length, 0); }
@@ -102,6 +152,7 @@ function demoLog() {
   for (let i = 83; i >= 1; i--) {
     const d = addDays(new Date(), -i), k = dayKey(d), weekend = d.getDay() === 0 || d.getDay() === 6;
     habits.forEach((h, j) => {
+      if (!h.days.includes(d.getDay())) return;
       const p = 0.55 + (83 - i) / 83 * 0.35 - (weekend ? 0.2 : 0) - j * 0.05;
       if (rnd() < p) { const off = Math.round((rnd() - 0.35) * 40); const m = Math.max(0, mins(h.time) + off); (lg[k] = lg[k] || {})[h.id] = { at: String(Math.floor(m / 60) % 24).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0') }; }
     });
@@ -141,7 +192,7 @@ function renderWelcome() {
 function groet(d) { const h = d.getHours(); return (h < 6 ? 'Goeienacht' : h < 12 ? 'Goeiemorgen' : h < 18 ? 'Goeiemiddag' : 'Goeienavond') + ` ${NAME}`; }
 function renderToday() {
   const now = new Date(), done = log[dayKey(now)] || {}, hm = nowHM();
-  const list = sortedHabits(), n = list.filter(h => done[h.id]).length;
+  const list = sortedHabits().filter(h => scheduled(h, now) || done[h.id]), n = list.filter(h => done[h.id]).length;
   head(groet(now), now.toLocaleDateString('nl-BE', { weekday: 'long', day: 'numeric', month: 'long' }));
   const r = 34, c = 2 * Math.PI * r, frac = list.length ? n / list.length : 0;
   $('#ring').innerHTML = `<svg viewBox="0 0 84 84"><circle cx="42" cy="42" r="${r}" stroke="rgba(255,255,255,.2)" stroke-width="8" fill="none"/>
@@ -150,7 +201,8 @@ function renderToday() {
   let html = '';
   if (list.length && n === list.length) html += `<div class="card celebrate"><b>Alles gedaan vandaag! 🎉</b><span class="small">Goed bezig, ${NAME}. Morgen opnieuw.</span></div>`;
   if (!PREVIEW && !store.get('bannerDone', false)) html += `<div class="banner" id="rb"><div class="e">⏰</div><div><b>Krijg een seintje op het juiste uur</b><div class="small">Tik hier om de herinneringen in je agenda te zetten.</div></div></div>`;
-  if (!list.length) html += `<div class="card empty"><div class="big">🌱</div>Nog geen gewoontes.<br>Begin klein: voeg er één toe bij <b>Gewoontes</b>.</div>`;
+  if (!list.length && habits.length) html += `<div class="card empty"><div class="big">☕</div>Vandaag staat er niets gepland.<br>Geniet van je rustdag, ${esc(NAME)}.</div>`;
+  else if (!list.length) html += `<div class="card empty"><div class="big">🌱</div>Nog geen gewoontes.<br>Begin klein: voeg er één toe bij <b>Gewoontes</b>.</div>`;
   for (const h of list) {
     const d = done[h.id], late = !d && h.time <= hm, s = streak(log, h.id);
     html += `<div class="card habit ${d ? 'done' : ''}" data-id="${h.id}" style="--hc:${col(h)}">
@@ -238,7 +290,7 @@ function renderOverview() {
   html += `<div class="h2">Per gewoonte · 30 dagen</div>`;
   for (const h of sortedHabits()) {
     const r = rangeRate(lg, addDays(today, -29), 30, h.id);
-    let dots = ''; for (let i = 29; i >= 0; i--) dots += `<i class="${isDone(lg, addDays(today, -i), h.id) ? 'on' : ''}"></i>`;
+    let dots = ''; for (let i = 29; i >= 0; i--) { const dd = addDays(today, -i); dots += `<i class="${isDone(lg, dd, h.id) ? 'on' : scheduled(h, dd) ? '' : 'off'}"></i>`; }
     html += `<div class="card" style="--hc:${col(h)}"><div class="hrow"><div class="icon">${h.icon}</div>
       <div style="flex:1;min-width:0"><b>${esc(h.name)}</b><div class="small">🔥 ${streak(lg, h.id)} op rij · record ${bestStreak(lg, h.id)}</div></div>
       <div class="pct">${Math.round(r * 100)}%</div></div><div class="dots">${dots}</div></div>`;
@@ -278,7 +330,7 @@ function insights(lg, today) {
   // sterkste en zwakste gewoonte
   if (habits.length > 1) {
     const rs = habits.map(h => [h, rangeRate(lg, addDays(today, -29), 30, h.id)]).sort((a, b) => b[1] - a[1]);
-    out.push(['🏆', `${rs[0][0].icon} ${rs[0][0].name} gaat het best`, `${Math.round(rs[0][1] * 100)}% van de dagen. ${rs.at(-1)[0].name} zit op ${Math.round(rs.at(-1)[1] * 100)}%.`]);
+    out.push(['🏆', `${rs[0][0].icon} ${rs[0][0].name} gaat het best`, `${Math.round(rs[0][1] * 100)}% van de geplande dagen. ${rs.at(-1)[0].name} zit op ${Math.round(rs.at(-1)[1] * 100)}%.`]);
   }
   // trend
   const a = rangeRate(lg, addDays(today, -13), 14), b = rangeRate(lg, addDays(today, -27), 14);
@@ -307,15 +359,24 @@ function editor(h) {
     <div><label for="n-${h.id}">Wat</label><input type="text" id="n-${h.id}" class="hn" value="${esc(h.name)}"></div>
     <div class="row"><div><label for="t-${h.id}">Hoe laat</label><input type="time" id="t-${h.id}" class="ht" value="${h.time}"></div>
       ${h.id !== 'new' ? '<div style="flex:0 0 auto"><button class="btn danger del">Wis</button></div>' : ''}</div>
+    <div><label>Op welke dagen</label><div class="chips">${ALL_DAYS.map(d => `<button class="chip ${h.days.includes(d) ? 'on' : ''}" data-d="${d}" aria-pressed="${h.days.includes(d)}">${SHORT[d]}</button>`).join('')}</div>
+      <div class="quick"><button data-q="all">Elke dag</button><button data-q="week">Weekdagen</button><button data-q="weekend">Weekend</button></div></div>
+    <div class="row"><div><label for="s-${h.id}">Vanaf</label><input type="date" id="s-${h.id}" class="hs" value="${h.start}"></div>
+      <div><label for="e-${h.id}">Hoe lang</label><select id="e-${h.id}" class="he">
+        <option value="never" ${h.endType === 'never' ? 'selected' : ''}>Altijd</option>
+        <option value="until" ${h.endType === 'until' ? 'selected' : ''}>Tot een datum</option>
+        <option value="count" ${h.endType === 'count' ? 'selected' : ''}>Aantal keer</option></select></div></div>
+    ${h.endType === 'until' ? `<div><label for="u-${h.id}">Tot en met</label><input type="date" id="u-${h.id}" class="hu" value="${h.until || ''}" min="${h.start}"></div>` : ''}
+    ${h.endType === 'count' ? `<div><label for="c-${h.id}">Hoeveel keer in totaal</label><input type="number" inputmode="numeric" min="1" max="999" id="c-${h.id}" class="hc" value="${h.count || ''}" placeholder="bv. 30"></div>` : ''}
     <div><label>Kleur</label><div class="swatches">${COLORS.map(c => `<button class="sw ${h.color === c ? 'on' : ''}" data-c="${c}" style="--c:var(--c-${c})" aria-label="${c}"></button>`).join('')}</div></div>
     <div><label>Icoon</label><div class="icons">${ICONS.map(i => `<button class="ic ${h.icon === i ? 'on' : ''}" data-i="${i}">${i}</button>`).join('')}</div></div></div>`;
 }
 let draft = null;
 function renderHabits() {
   head('Gewoontes', 'Begin klein. Eén of twee is genoeg.');
-  draft = draft || { id: 'new', name: '', time: '12:00', color: COLORS[habits.length % COLORS.length], icon: ICONS[(habits.length + 1) % ICONS.length] };
+  draft = draft || { id: 'new', name: '', time: '12:00', days: [...ALL_DAYS], start: dayKey(), endType: 'never', color: COLORS[habits.length % COLORS.length], icon: ICONS[(habits.length + 1) % ICONS.length] };
   let html = sortedHabits().map(h => `<div class="card ${openId === h.id ? 'open' : ''}" data-id="${h.id}" style="--hc:${col(h)}">
-      <div class="edit-head"><div class="icon">${h.icon}</div><div class="name">${esc(h.name)}<div class="small">elke dag om ${hourText(h.time)}</div></div>
+      <div class="edit-head"><div class="icon">${h.icon}</div><div class="name">${esc(h.name)}<div class="small">${finished(h) ? '✓ afgelopen · ' : ''}${planText(h)}</div></div>
       <svg class="chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></div>
       ${openId === h.id ? `<div class="edit-body">${editor(h)}</div>` : ''}</div>`).join('');
   html += `<div class="h2">Nieuwe gewoonte</div><div class="card" data-id="new">${editor(draft).replace('<div class="stack">', '<div class="stack">')}
@@ -324,7 +385,7 @@ function renderHabits() {
   if (PREVIEW) html += `<div class="card"><b>Herinneringen en reservekopie</b>
       <p class="small" style="margin-bottom:0">Dit is de voorbeeldversie. Herinneringen in je agenda, meldingen en een reservekopie werken pas in de echte app op je beginscherm.</p></div>`;
   else html += `<div class="h2">Herinneringen</div><div class="card stack">
-      <p class="small" style="margin:0">Zet je gewoontes in de agenda van je telefoon. Die stuurt je dan elke dag op het juiste uur een berichtje, ook als deze app dicht is. Doe dit opnieuw als je iets verandert.</p>
+      <p class="small" style="margin:0">Zet je gewoontes in de agenda van je telefoon. Die stuurt je dan op de gekozen dagen en het juiste uur een berichtje, ook als deze app dicht is. Doe dit opnieuw als je iets verandert.</p>
       <button class="btn" id="ics">📆 Zet herinneringen in mijn agenda</button>
       <details class="small"><summary style="cursor:pointer;font-weight:700;color:var(--brand-2)">Herinneringen weer uit je agenda halen?</summary>
         <p style="margin:8px 0 0">De app kan je agenda zelf niet aanpassen, maar het gaat zo, per gewoonte:<br>
@@ -347,6 +408,17 @@ function renderHabits() {
     hn.oninput = e => { h.name = e.target.value; };
     hn.onchange = e => { h.name = e.target.value.trim() || h.name; if (id !== 'new') { save(); render(); } };
     el.querySelector('.ht').onchange = e => { if (e.target.value) { h.time = e.target.value; if (id !== 'new') { save(); render(); } } };
+    const upd = () => { if (id !== 'new') { save(); demoLog.cache = null; } render(); };
+    el.querySelectorAll('.chip').forEach(b => b.onclick = () => {
+      const d = Number(b.dataset.d);
+      if (h.days.includes(d)) { if (h.days.length > 1) h.days = h.days.filter(x => x !== d); } else h.days = [...h.days, d];
+      upd();
+    });
+    el.querySelectorAll('.quick button').forEach(b => b.onclick = () => { h.days = { all: [...ALL_DAYS], week: [1, 2, 3, 4, 5], weekend: [6, 0] }[b.dataset.q]; upd(); });
+    el.querySelector('.hs').onchange = e => { if (e.target.value) { h.start = e.target.value; upd(); } };
+    el.querySelector('.he').onchange = e => { h.endType = e.target.value; if (h.endType === 'until' && !h.until) h.until = dayKey(addDays(new Date(h.start + 'T12:00'), 29)); if (h.endType === 'count' && !h.count) h.count = 30; upd(); };
+    const hu = el.querySelector('.hu'); if (hu) hu.onchange = e => { if (e.target.value) { h.until = e.target.value; upd(); } };
+    const hc = el.querySelector('.hc'); if (hc) hc.onchange = e => { const v = parseInt(e.target.value, 10); if (v > 0) { h.count = v; upd(); } };
     el.querySelectorAll('.sw').forEach(b => b.onclick = () => { h.color = b.dataset.c; if (id !== 'new') save(); render(); });
     el.querySelectorAll('.ic').forEach(b => b.onclick = () => { h.icon = b.dataset.i; if (id !== 'new') save(); render(); });
     const del = el.querySelector('.del');
@@ -385,19 +457,27 @@ function download(name, text, type) {
   setTimeout(() => URL.revokeObjectURL(a.href), 5000);
 }
 
-// Agenda-bestand (.ics): elke gewoonte als dagelijkse afspraak van 5 min met een melding op het uur zelf.
+// Agenda-bestand (.ics): elke gewoonte als terugkerende afspraak (gekozen dagen, start en einde) van 5 min met een melding op het uur zelf.
 function downloadIcs() {
   if (!habits.length) return;
-  const d = dayKey().replace(/-/g, '');
   const stamp = new Date().toISOString().replace(/[-:]/g, '').slice(0, 15) + 'Z';
   const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Elke Dag//NL', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH'];
+  const BY = ['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA'];
   for (const h of habits) {
+    // eerste geplande dag vanaf vandaag (geen afspraken in het verleden)
+    let first = addDays(new Date(Math.max(new Date(h.start + 'T12:00'), addDays(new Date(), 0))), 0);
+    for (let i = 0; i < 7 && !h.days.includes(first.getDay()); i++) first = addDays(first, 1);
+    const fk = dayKey(first);
+    let rule = h.days.length === 7 ? 'FREQ=DAILY' : 'FREQ=WEEKLY;BYDAY=' + [...h.days].sort((a, b) => ((a + 6) % 7) - ((b + 6) % 7)).map(d => BY[d]).join(',');
+    if (h.endType === 'until' && h.until) { if (h.until < fk) continue; rule += `;UNTIL=${h.until.replace(/-/g, '')}T235959`; }
+    if (h.endType === 'count' && h.count) { const left = h.count - occurrence(h, addDays(first, -1)); if (left <= 0) continue; rule += `;COUNT=${left}`; }
+    const d = fk.replace(/-/g, '');
     const [hh, mm] = h.time.split(':');
     const endMin = Number(hh) * 60 + Number(mm) + 5;
     const end = String(Math.floor(endMin / 60) % 24).padStart(2, '0') + String(endMin % 60).padStart(2, '0');
     const text = `Hé ${NAME}, het is ${hourText(h.time)}: ${h.name}`;
     lines.push('BEGIN:VEVENT', `UID:elkedag-${h.id}@elkedag`, `DTSTAMP:${stamp}`,
-      `DTSTART:${d}T${hh}${mm}00`, `DTEND:${d}T${end}00`, 'RRULE:FREQ=DAILY',
+      `DTSTART:${d}T${hh}${mm}00`, `DTEND:${d}T${end}00`, 'RRULE:' + rule,
       `SUMMARY:${icsEsc(h.icon + ' ' + h.name)}`, `DESCRIPTION:${icsEsc(text + '. Vink het af in Elke Dag.')}`,
       'BEGIN:VALARM', 'ACTION:DISPLAY', `DESCRIPTION:${icsEsc(text)}`, 'TRIGGER:PT0M', 'END:VALARM', 'END:VEVENT');
   }
@@ -429,7 +509,7 @@ function checkReminders() {
   const k = dayKey(), hm = nowHM();
   notified[k] = notified[k] || [];
   for (const h of habits) {
-    if (h.time <= hm && !log[k]?.[h.id] && !notified[k].includes(h.id)) {
+    if (scheduled(h, addDays(new Date(), 0)) && h.time <= hm && !log[k]?.[h.id] && !notified[k].includes(h.id)) {
       notified[k].push(h.id);
       if ('Notification' in window && Notification.permission === 'granted') notify(`Hé ${NAME}! ⏰`, `Het is ${hourText(h.time)}: ${h.name}.`);
     }
