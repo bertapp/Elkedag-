@@ -98,6 +98,9 @@ input[type=text],input[type=time]{width:100%;padding:12px;border-radius:12px;bor
 .quick button{border:none;background:var(--soft);color:var(--brand-2);border-radius:99px;padding:6px 12px;font-size:13px;font-weight:700;cursor:pointer}
 select,input[type=date],input[type=number]{width:100%;padding:12px;border-radius:12px;border:1.5px solid var(--line);background:var(--bg);color:var(--ink);font:inherit;font-size:16px;-webkit-appearance:none;appearance:none;min-height:48px}
 .dots i.off{opacity:.25}
+.seg{display:grid;grid-template-columns:repeat(2,1fr);gap:4px;background:var(--bg);border:1.5px solid var(--line);border-radius:12px;padding:3px}
+.seg button{border:none;background:transparent;border-radius:9px;padding:9px 2px;font:inherit;font-size:13px;font-weight:700;color:var(--muted);cursor:pointer}
+.seg button.on{background:var(--hc,var(--brand-2));color:var(--on-brand)}
 .daynav{display:flex;align-items:center;gap:8px;background:var(--card);border-radius:18px;padding:6px;box-shadow:var(--shadow)}
 .daynav button{border:none;background:transparent;border-radius:12px;cursor:pointer;font:inherit;font-weight:700;color:var(--brand-2);padding:8px 12px}
 .daynav #dPrev,.daynav #dNext{font-size:26px;line-height:1;width:48px;padding:6px 0;background:var(--soft)}
@@ -172,6 +175,6 @@ button.pill{border:none;cursor:pointer;font:inherit;font-size:12px;font-weight:7
 </nav>
 <div id="viewer"><img alt=""><p id="viewerCap"></p></div>
 <input type="file" id="photoInput" accept="image/*" capture="environment" hidden>
-<script src="app.js?v=14"></script>
+<script src="app.js?v=15"></script>
 </body>
 </html>

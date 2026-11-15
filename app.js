@@ -1,7 +1,7 @@
 // Elke Dag – app om dagelijkse gezonde gewoontes op te volgen.
 // Alles blijft op de telefoon zelf: gewoontes en vinkjes in localStorage, foto's in IndexedDB.
 
-const VERSION = 14;
+const VERSION = 15;
 const PREVIEW = !!window.PREVIEW; // voorbeeldversie: geen agenda-bestand, meldingen of kopieën
 const $ = s => document.querySelector(s);
 const main = $('#main');
@@ -29,8 +29,14 @@ function uid() { return Math.random().toString(36).slice(2, 10); }
 function dayKey(d = new Date()) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
 function addDays(d, n) { const x = new Date(d); x.setHours(12, 0, 0, 0); x.setDate(x.getDate() + n); return x; }
 function save() { store.set('habits', habits); store.set('log', log); store.set('notified', notified); }
-function sortedHabits() { return [...habits].sort((a, b) => (a.anytime ? '99' : a.time).localeCompare(b.anytime ? '99' : b.time)); }
-function whenText(h) { return h.anytime ? 'in de loop van de dag' : hourText(h.time); }
+// Wanneer: een vast uur ('time'), de voormiddag ('am'), de namiddag ('pm') of in de loop van de dag ('any').
+const PART = { am: { from: '09:00', to: '12:00', text: 'in de voormiddag', short: 'deze voormiddag' }, pm: { from: '13:00', to: '18:00', text: 'in de namiddag', short: 'deze namiddag' } };
+function whenOf(h) { return h.when || (h.anytime ? 'any' : 'time'); }
+function remindAt(h) { const w = whenOf(h); return w === 'time' ? h.time : PART[w] ? PART[w].from : null; } // uur van het seintje
+function lateAt(h) { const w = whenOf(h); return w === 'time' ? h.time : PART[w] ? PART[w].to : null; }      // vanaf wanneer "nog te doen"
+function sortKey(h) { return remindAt(h) || '99'; }
+function sortedHabits() { return [...habits].sort((a, b) => sortKey(a).localeCompare(sortKey(b))); }
+function whenText(h) { const w = whenOf(h); return w === 'time' ? hourText(h.time) : PART[w] ? PART[w].text : 'in de loop van de dag'; }
 function esc(s) { return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 function hourText(t) { const [h, m] = t.split(':').map(Number); return m ? `${h}u${String(m).padStart(2, '0')}` : `${h} uur`; }
 function nowHM() { return new Date().toTimeString().slice(0, 5); }
@@ -99,7 +105,7 @@ function daysText(days) {
 }
 function niceDate(k) { return new Date(k + 'T12:00').toLocaleDateString('nl-BE', { day: 'numeric', month: 'short', year: k.slice(0, 4) === String(new Date().getFullYear()) ? undefined : 'numeric' }); }
 function planText(h) {
-  let t = h.anytime ? `${daysText(h.days)}, in de loop van de dag` : `${daysText(h.days)} om ${hourText(h.time)}`;
+  let t = whenOf(h) === 'time' ? `${daysText(h.days)} om ${hourText(h.time)}` : `${daysText(h.days)}, ${whenText(h)}`;
   if (h.start > dayKey()) t += ` · vanaf ${niceDate(h.start)}`;
   if (h.endType === 'until' && h.until) t += ` · tot ${niceDate(h.until)}`;
   if (h.endType === 'count' && h.count) {
@@ -221,7 +227,7 @@ function renderToday() {
   if (!list.length && habits.length) html += `<div class="card empty"><div class="big">☕</div>${isToday ? 'Vandaag' : 'Op deze dag'} staat er niets gepland.<br>Een rustdag, ${esc(NAME)}.</div>`;
   else if (!list.length) html += `<div class="card empty"><div class="big">🌱</div>Nog geen gewoontes.<br>Begin klein: voeg er één toe bij <b>Gewoontes</b>.</div>`;
   for (const h of list) {
-    const d = done[h.id], late = !d && !future && !h.anytime && (dayOff < 0 || h.time <= hm), s = isToday ? streak(log, h.id) : 0;
+    const d = done[h.id], late = !d && !future && !!lateAt(h) && (dayOff < 0 || lateAt(h) <= hm), s = isToday ? streak(log, h.id) : 0;
     html += `<div class="card habit ${d ? 'done' : ''} ${future ? 'future' : ''}" data-id="${h.id}" style="--hc:${col(h)}">
       <div class="icon">${h.icon}</div>
       <div class="info"><div class="name">${esc(h.name)}</div>
@@ -263,7 +269,7 @@ function renderToday() {
     if (Math.abs(dx) > 70 && Math.abs(dx) > Math.abs(dy) * 1.5) goDay(dayOff + (dx < 0 ? 1 : -1));
   }, { passive: true });
 })();
-function doneAt(h) { return dayOff === 0 ? nowHM() : (h && !h.anytime ? h.time : '12:00'); }
+function doneAt(h) { return dayOff === 0 ? nowHM() : (h && remindAt(h)) || '12:00'; }
 async function toggle(id, el) {
   const k = dayKey(viewDate()); log[k] = log[k] || {};
   if (log[k][id]) { if (log[k][id].photo) await photoDel(log[k][id].photo); delete log[k][id]; }
@@ -361,7 +367,7 @@ function insights(lg, today) {
   if (totalDone(lg) >= 5 && best !== worst) out.push(['📅', `Op ${DAYS[best]} doe je het best`, `Op ${DAYS[worst]} lukt het het minst vaak (${Math.round(avg[worst] * 100)}%). Misschien daar een extra seintje?`]);
   // stiptheid
   let off = [], h0 = null;
-  for (const [k, v] of Object.entries(lg)) for (const [id, e] of Object.entries(v)) { const h = habits.find(x => x.id === id); if (h && e.at && !h.anytime) off.push(mins(e.at) - mins(h.time)); }
+  for (const [k, v] of Object.entries(lg)) for (const [id, e] of Object.entries(v)) { const h = habits.find(x => x.id === id); if (h && e.at && whenOf(h) === 'time') off.push(mins(e.at) - mins(h.time)); }
   if (off.length >= 3) {
     const m = Math.round(off.reduce((a, b) => a + b, 0) / off.length);
     out.push(['⏱️', m <= 5 && m >= -5 ? 'Je bent heel stipt' : m > 0 ? `Gemiddeld ${m} minuten na het geplande uur` : `Gemiddeld ${-m} minuten vóór het geplande uur`,
@@ -397,8 +403,8 @@ let openId = null;
 function editor(h) {
   return `<div class="stack">
     <div><label for="n-${h.id}">Wat</label><input type="text" id="n-${h.id}" class="hn" value="${esc(h.name)}"></div>
-    <div class="row"><div><label for="t-${h.id}">Hoe laat</label>${h.anytime ? `<div class="anybox">In de loop van de dag</div>` : `<input type="time" id="t-${h.id}" class="ht" value="${h.time}">`}
-      <label class="anyt"><input type="checkbox" class="hany" ${h.anytime ? 'checked' : ''}> Geen vast uur</label></div>
+    <div class="row"><div><label>Wanneer</label><div class="seg">${[['time', 'Vast uur'], ['am', 'Voormiddag'], ['pm', 'Namiddag'], ['any', 'Hele dag']].map(([v, t]) => `<button class="${whenOf(h) === v ? 'on' : ''}" data-w="${v}">${t}</button>`).join('')}</div>
+      ${whenOf(h) === 'time' ? `<input type="time" id="t-${h.id}" class="ht" value="${h.time}" aria-label="Hoe laat" style="margin-top:8px">` : ''}</div>
       ${h.id !== 'new' ? '<div style="flex:0 0 auto"><button class="btn danger del">Wis</button></div>' : ''}</div>
     ${planEditor(h, 'g')}
     <div><label>Kleur</label><div class="swatches">${COLORS.map(c => `<button class="sw ${h.color === c ? 'on' : ''}" data-c="${c}" style="--c:var(--c-${c})" aria-label="${c}"></button>`).join('')}</div></div>
@@ -434,7 +440,7 @@ function renderHabits() {
     ${sortedHabits().map(h => `<div class="card stack" data-plan="${h.id}" style="--hc:${col(h)}">
       <div class="hrow"><div class="icon">${h.icon}</div><div style="flex:1;min-width:0"><b>${esc(h.name)}</b><div class="small">${finished(h) ? '✓ afgelopen · ' : ''}${planText(h)}</div></div></div>
       ${planEditor(h, 'r')}
-      ${h.anytime ? '<p class="small" style="margin:0">Geen vast uur, dus geen herinnering in je agenda. Wil je toch een seintje? Kies dan een uur bij deze gewoonte.</p>' : `<button class="btn ics1" data-id="${h.id}" ${finished(h) ? 'disabled style="opacity:.5"' : ''}>📆 In mijn agenda zetten</button>`}</div>`).join('')}
+      ${!remindAt(h) ? '<p class="small" style="margin:0">Hele dag, dus geen herinnering in je agenda. Wil je toch een seintje? Kies dan een uur, de voormiddag of de namiddag.</p>' : `<button class="btn ics1" data-id="${h.id}" ${finished(h) ? 'disabled style="opacity:.5"' : ''}>📆 In mijn agenda zetten</button>`}</div>`).join('')}
     <div class="card stack">
       <button class="btn ghost" id="notif">${notifActive() ? '🔕 Meldingen in de app uitzetten' : '🔔 Meldingen in de app aanzetten'}</button>
       <p class="small" id="notifState" style="margin:0"></p></div>
@@ -452,7 +458,7 @@ function renderHabits() {
     const hn = el.querySelector('.hn'); if (!hn) return;
     hn.oninput = e => { h.name = e.target.value; };
     hn.onchange = e => { h.name = e.target.value.trim() || h.name; if (id !== 'new') { save(); render(); } };
-    el.querySelector('.hany').onchange = e => { h.anytime = e.target.checked; if (id !== 'new') save(); render(); };
+    el.querySelectorAll('.seg button').forEach(b => b.onclick = () => { h.when = b.dataset.w; delete h.anytime; if (id !== 'new') save(); render(); });
     const ht = el.querySelector('.ht'); if (ht) ht.onchange = e => { if (e.target.value) { h.time = e.target.value; if (id !== 'new') { save(); render(); } } };
     bindPlan(el, h, id);
     el.querySelectorAll('.sw').forEach(b => b.onclick = () => { h.color = b.dataset.c; if (id !== 'new') save(); render(); });
@@ -515,7 +521,8 @@ function downloadIcs(list = habits) {
   const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Elke Dag//NL', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH'];
   const BY = ['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA'];
   for (const h of list) {
-    if (h.anytime) continue;
+    if (!remindAt(h)) continue;
+    const w = whenOf(h);
     // eerste geplande dag vanaf vandaag (geen afspraken in het verleden)
     let first = addDays(new Date(Math.max(new Date(h.start + 'T12:00'), addDays(new Date(), 0))), 0);
     for (let i = 0; i < 7 && !h.days.includes(first.getDay()); i++) first = addDays(first, 1);
@@ -524,10 +531,10 @@ function downloadIcs(list = habits) {
     if (h.endType === 'until' && h.until) { if (h.until < fk) continue; rule += `;UNTIL=${h.until.replace(/-/g, '')}T235959`; }
     if (h.endType === 'count' && h.count) { const left = h.count - occurrence(h, addDays(first, -1)); if (left <= 0) continue; rule += `;COUNT=${left}`; }
     const d = fk.replace(/-/g, '');
-    const [hh, mm] = h.time.split(':');
-    const endMin = Number(hh) * 60 + Number(mm) + 5;
+    const [hh, mm] = remindAt(h).split(':');
+    const endMin = w === 'time' ? Number(hh) * 60 + Number(mm) + 5 : mins(PART[w].to);
     const end = String(Math.floor(endMin / 60) % 24).padStart(2, '0') + String(endMin % 60).padStart(2, '0');
-    const text = `Hé ${NAME}, het is ${hourText(h.time)}: ${h.name}`;
+    const text = w === 'time' ? `Hé ${NAME}, het is ${hourText(h.time)}: ${h.name}` : `Hé ${NAME}, ${PART[w].short}: ${h.name}`;
     lines.push('BEGIN:VEVENT', `UID:elkedag-${h.id}@elkedag`, `DTSTAMP:${stamp}`,
       `DTSTART:${d}T${hh}${mm}00`, `DTEND:${d}T${end}00`, 'RRULE:' + rule,
       `SUMMARY:${icsEsc(h.icon + ' ' + h.name)}`, `DESCRIPTION:${icsEsc(text + '. Vink het af in Elke Dag.')}`,
@@ -567,9 +574,9 @@ function checkReminders() {
   const k = dayKey(), hm = nowHM();
   notified[k] = notified[k] || [];
   for (const h of habits) {
-    if (!h.anytime && scheduled(h, addDays(new Date(), 0)) && h.time <= hm && !log[k]?.[h.id] && !notified[k].includes(h.id)) {
+    if (remindAt(h) && scheduled(h, addDays(new Date(), 0)) && remindAt(h) <= hm && !log[k]?.[h.id] && !notified[k].includes(h.id)) {
       notified[k].push(h.id);
-      if (notifActive()) notify(`Hé ${NAME}! ⏰`, `Het is ${hourText(h.time)}: ${h.name}.`);
+      if (notifActive()) notify(`Hé ${NAME}! ⏰`, whenOf(h) === 'time' ? `Het is ${hourText(h.time)}: ${h.name}.` : `${PART[whenOf(h)].short.charAt(0).toUpperCase() + PART[whenOf(h)].short.slice(1)}: ${h.name}.`);
     }
   }
   for (const d of Object.keys(notified)) if (d < k) delete notified[d];
