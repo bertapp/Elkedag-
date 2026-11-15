@@ -1,7 +1,7 @@
 // Elke Dag – app om dagelijkse gezonde gewoontes op te volgen.
 // Alles blijft op de telefoon zelf: gewoontes en vinkjes in localStorage, foto's in IndexedDB.
 
-const VERSION = 12;
+const VERSION = 13;
 const PREVIEW = !!window.PREVIEW; // voorbeeldversie: geen agenda-bestand, meldingen of kopieën
 const $ = s => document.querySelector(s);
 const main = $('#main');
@@ -29,7 +29,8 @@ function uid() { return Math.random().toString(36).slice(2, 10); }
 function dayKey(d = new Date()) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
 function addDays(d, n) { const x = new Date(d); x.setHours(12, 0, 0, 0); x.setDate(x.getDate() + n); return x; }
 function save() { store.set('habits', habits); store.set('log', log); store.set('notified', notified); }
-function sortedHabits() { return [...habits].sort((a, b) => a.time.localeCompare(b.time)); }
+function sortedHabits() { return [...habits].sort((a, b) => (a.anytime ? '99' : a.time).localeCompare(b.anytime ? '99' : b.time)); }
+function whenText(h) { return h.anytime ? 'in de loop van de dag' : hourText(h.time); }
 function esc(s) { return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 function hourText(t) { const [h, m] = t.split(':').map(Number); return m ? `${h}u${String(m).padStart(2, '0')}` : `${h} uur`; }
 function nowHM() { return new Date().toTimeString().slice(0, 5); }
@@ -98,7 +99,7 @@ function daysText(days) {
 }
 function niceDate(k) { return new Date(k + 'T12:00').toLocaleDateString('nl-BE', { day: 'numeric', month: 'short', year: k.slice(0, 4) === String(new Date().getFullYear()) ? undefined : 'numeric' }); }
 function planText(h) {
-  let t = `${daysText(h.days)} om ${hourText(h.time)}`;
+  let t = h.anytime ? `${daysText(h.days)}, in de loop van de dag` : `${daysText(h.days)} om ${hourText(h.time)}`;
   if (h.start > dayKey()) t += ` · vanaf ${niceDate(h.start)}`;
   if (h.endType === 'until' && h.until) t += ` · tot ${niceDate(h.until)}`;
   if (h.endType === 'count' && h.count) {
@@ -205,12 +206,12 @@ function renderToday() {
   if (!list.length && habits.length) html += `<div class="card empty"><div class="big">☕</div>Vandaag staat er niets gepland.<br>Geniet van je rustdag, ${esc(NAME)}.</div>`;
   else if (!list.length) html += `<div class="card empty"><div class="big">🌱</div>Nog geen gewoontes.<br>Begin klein: voeg er één toe bij <b>Gewoontes</b>.</div>`;
   for (const h of list) {
-    const d = done[h.id], late = !d && h.time <= hm, s = streak(log, h.id);
+    const d = done[h.id], late = !d && !h.anytime && h.time <= hm, s = streak(log, h.id);
     html += `<div class="card habit ${d ? 'done' : ''}" data-id="${h.id}" style="--hc:${col(h)}">
       <div class="icon">${h.icon}</div>
       <div class="info"><div class="name">${esc(h.name)}</div>
-        <div class="meta">${hourText(h.time)}
-          ${d ? `<span class="pill">gedaan om ${d.at}</span>` : late ? '<span class="pill late">nog te doen</span>' : ''}
+        <div class="meta">${whenText(h)}
+          ${d ? `<button class="pill editat" aria-label="Uur aanpassen">gedaan om ${d.at} ✎</button>` : late ? '<span class="pill late">nog te doen</span>' : ''}
           ${s >= 2 ? `<span class="pill fire">🔥 ${s} dagen</span>` : ''}</div></div>
       ${d && d.photo ? `<img class="thumb" data-photo="${d.photo}" data-cap="${esc(h.name)}" alt="foto">` : `<button class="cam" aria-label="Foto toevoegen">${CAM}</button>`}
       <button class="check" aria-label="${d ? 'Niet gedaan' : 'Afvinken'}">${CHECK}</button>
@@ -221,6 +222,15 @@ function renderToday() {
     const id = el.dataset.id;
     el.querySelector('.check').onclick = () => toggle(id, el);
     const pb = el.querySelector('.cam'); if (pb) pb.onclick = () => pickPhoto(id);
+    const ea = el.querySelector('.editat');
+    if (ea) ea.onclick = ev => {
+      ev.stopPropagation();
+      const k = dayKey(), inp = document.createElement('input');
+      inp.type = 'time'; inp.value = log[k][id].at; inp.className = 'attime'; inp.setAttribute('aria-label', 'Hoe laat gedaan');
+      ea.replaceWith(inp); inp.focus();
+      const done = () => { if (inp.value) { log[k][id].at = inp.value; save(); } render(); };
+      inp.onchange = done; inp.onblur = done;
+    };
   });
   const rb = $('#rb'); if (rb) rb.onclick = () => { store.set('bannerDone', true); tab = 'habits'; render(true); };
   loadThumbs();
@@ -247,7 +257,7 @@ $('#photoInput').onchange = async e => {
 async function loadThumbs() {
   for (const img of main.querySelectorAll('img[data-photo]')) {
     const src = await photoGet(img.dataset.photo);
-    if (src) { img.src = src; img.closest('figure, .habit').addEventListener('click', ev => { if (ev.target.closest('.check')) return; if (ev.target === img || img.closest('figure')) openViewer(src, img.dataset.cap); }); }
+    if (src) { img.src = src; img.closest('figure, .habit').addEventListener('click', ev => { if (ev.target.closest('.check, .editat, input')) return; if (ev.target === img || img.closest('figure')) openViewer(src, img.dataset.cap); }); }
   }
 }
 function openViewer(src, cap) { $('#viewer img').src = src; $('#viewerCap').textContent = cap || ''; $('#viewer').style.display = 'flex'; }
@@ -322,7 +332,7 @@ function insights(lg, today) {
   if (totalDone(lg) >= 5 && best !== worst) out.push(['📅', `Op ${DAYS[best]} doe je het best`, `Op ${DAYS[worst]} lukt het het minst vaak (${Math.round(avg[worst] * 100)}%). Misschien daar een extra seintje?`]);
   // stiptheid
   let off = [], h0 = null;
-  for (const [k, v] of Object.entries(lg)) for (const [id, e] of Object.entries(v)) { const h = habits.find(x => x.id === id); if (h && e.at) off.push(mins(e.at) - mins(h.time)); }
+  for (const [k, v] of Object.entries(lg)) for (const [id, e] of Object.entries(v)) { const h = habits.find(x => x.id === id); if (h && e.at && !h.anytime) off.push(mins(e.at) - mins(h.time)); }
   if (off.length >= 3) {
     const m = Math.round(off.reduce((a, b) => a + b, 0) / off.length);
     out.push(['⏱️', m <= 5 && m >= -5 ? 'Je bent heel stipt' : m > 0 ? `Gemiddeld ${m} minuten na het geplande uur` : `Gemiddeld ${-m} minuten vóór het geplande uur`,
@@ -358,7 +368,8 @@ let openId = null;
 function editor(h) {
   return `<div class="stack">
     <div><label for="n-${h.id}">Wat</label><input type="text" id="n-${h.id}" class="hn" value="${esc(h.name)}"></div>
-    <div class="row"><div><label for="t-${h.id}">Hoe laat</label><input type="time" id="t-${h.id}" class="ht" value="${h.time}"></div>
+    <div class="row"><div><label for="t-${h.id}">Hoe laat</label>${h.anytime ? `<div class="anybox">In de loop van de dag</div>` : `<input type="time" id="t-${h.id}" class="ht" value="${h.time}">`}
+      <label class="anyt"><input type="checkbox" class="hany" ${h.anytime ? 'checked' : ''}> Geen vast uur</label></div>
       ${h.id !== 'new' ? '<div style="flex:0 0 auto"><button class="btn danger del">Wis</button></div>' : ''}</div>
     ${planEditor(h, 'g')}
     <div><label>Kleur</label><div class="swatches">${COLORS.map(c => `<button class="sw ${h.color === c ? 'on' : ''}" data-c="${c}" style="--c:var(--c-${c})" aria-label="${c}"></button>`).join('')}</div></div>
@@ -394,7 +405,7 @@ function renderHabits() {
     ${sortedHabits().map(h => `<div class="card stack" data-plan="${h.id}" style="--hc:${col(h)}">
       <div class="hrow"><div class="icon">${h.icon}</div><div style="flex:1;min-width:0"><b>${esc(h.name)}</b><div class="small">${finished(h) ? '✓ afgelopen · ' : ''}${planText(h)}</div></div></div>
       ${planEditor(h, 'r')}
-      <button class="btn ics1" data-id="${h.id}" ${finished(h) ? 'disabled style="opacity:.5"' : ''}>📆 In mijn agenda zetten</button></div>`).join('')}
+      ${h.anytime ? '<p class="small" style="margin:0">Geen vast uur, dus geen herinnering in je agenda. Wil je toch een seintje? Kies dan een uur bij deze gewoonte.</p>' : `<button class="btn ics1" data-id="${h.id}" ${finished(h) ? 'disabled style="opacity:.5"' : ''}>📆 In mijn agenda zetten</button>`}</div>`).join('')}
     <div class="card stack">
       <button class="btn ghost" id="notif">${notifActive() ? '🔕 Meldingen in de app uitzetten' : '🔔 Meldingen in de app aanzetten'}</button>
       <p class="small" id="notifState" style="margin:0"></p></div>
@@ -412,7 +423,8 @@ function renderHabits() {
     const hn = el.querySelector('.hn'); if (!hn) return;
     hn.oninput = e => { h.name = e.target.value; };
     hn.onchange = e => { h.name = e.target.value.trim() || h.name; if (id !== 'new') { save(); render(); } };
-    el.querySelector('.ht').onchange = e => { if (e.target.value) { h.time = e.target.value; if (id !== 'new') { save(); render(); } } };
+    el.querySelector('.hany').onchange = e => { h.anytime = e.target.checked; if (id !== 'new') save(); render(); };
+    const ht = el.querySelector('.ht'); if (ht) ht.onchange = e => { if (e.target.value) { h.time = e.target.value; if (id !== 'new') { save(); render(); } } };
     bindPlan(el, h, id);
     el.querySelectorAll('.sw').forEach(b => b.onclick = () => { h.color = b.dataset.c; if (id !== 'new') save(); render(); });
     el.querySelectorAll('.ic').forEach(b => b.onclick = () => { h.icon = b.dataset.i; if (id !== 'new') save(); render(); });
@@ -474,6 +486,7 @@ function downloadIcs(list = habits) {
   const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Elke Dag//NL', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH'];
   const BY = ['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA'];
   for (const h of list) {
+    if (h.anytime) continue;
     // eerste geplande dag vanaf vandaag (geen afspraken in het verleden)
     let first = addDays(new Date(Math.max(new Date(h.start + 'T12:00'), addDays(new Date(), 0))), 0);
     for (let i = 0; i < 7 && !h.days.includes(first.getDay()); i++) first = addDays(first, 1);
@@ -525,7 +538,7 @@ function checkReminders() {
   const k = dayKey(), hm = nowHM();
   notified[k] = notified[k] || [];
   for (const h of habits) {
-    if (scheduled(h, addDays(new Date(), 0)) && h.time <= hm && !log[k]?.[h.id] && !notified[k].includes(h.id)) {
+    if (!h.anytime && scheduled(h, addDays(new Date(), 0)) && h.time <= hm && !log[k]?.[h.id] && !notified[k].includes(h.id)) {
       notified[k].push(h.id);
       if (notifActive()) notify(`Hé ${NAME}! ⏰`, `Het is ${hourText(h.time)}: ${h.name}.`);
     }
