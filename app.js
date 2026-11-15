@@ -1,7 +1,7 @@
 // Elke Dag – app om dagelijkse gezonde gewoontes op te volgen.
 // Alles blijft op de telefoon zelf: gewoontes en vinkjes in localStorage, foto's in IndexedDB.
 
-const VERSION = 13;
+const VERSION = 14;
 const PREVIEW = !!window.PREVIEW; // voorbeeldversie: geen agenda-bestand, meldingen of kopieën
 const $ = s => document.querySelector(s);
 const main = $('#main');
@@ -165,7 +165,7 @@ function demoLog() {
 
 // ---------- navigatie ----------
 let tab = 'today';
-document.querySelectorAll('nav button').forEach(b => b.onclick = () => { tab = b.dataset.tab; render(true); });
+document.querySelectorAll('nav button').forEach(b => b.onclick = () => { if (b.dataset.tab === 'today' && tab === 'today') dayOff = 0; tab = b.dataset.tab; render(true); });
 function render(top) {
   document.querySelectorAll('nav button').forEach(b => b.classList.toggle('on', b.dataset.tab === tab));
   if (!NAME) return renderWelcome();
@@ -192,53 +192,82 @@ function renderWelcome() {
 
 // ---------- vandaag ----------
 function groet(d) { const h = d.getHours(); return (h < 6 ? 'Goeienacht' : h < 12 ? 'Goeiemorgen' : h < 18 ? 'Goeiemiddag' : 'Goeienavond') + ` ${NAME}`; }
+let dayOff = 0; // 0 = vandaag, -1 = gisteren, 1 = morgen ...
+function viewDate() { return addDays(new Date(), dayOff); }
+function dayTitle(d) {
+  if (dayOff === 0) return groet(new Date());
+  if (dayOff === -1) return 'Gisteren';
+  if (dayOff === 1) return 'Morgen';
+  if (dayOff === 2) return 'Overmorgen';
+  const w = DAYS[d.getDay()]; return w.charAt(0).toUpperCase() + w.slice(1);
+}
+function goDay(n) { dayOff = n; renderToday(); window.scrollTo(0, 0); }
 function renderToday() {
-  const now = new Date(), done = log[dayKey(now)] || {}, hm = nowHM();
-  const list = sortedHabits().filter(h => scheduled(h, now) || done[h.id]), n = list.filter(h => done[h.id]).length;
-  head(groet(now), now.toLocaleDateString('nl-BE', { weekday: 'long', day: 'numeric', month: 'long' }));
+  const vd = viewDate(), k = dayKey(vd), done = log[k] || {}, hm = nowHM();
+  const isToday = dayOff === 0, future = dayOff > 0;
+  const list = sortedHabits().filter(h => scheduled(h, vd) || done[h.id]), n = list.filter(h => done[h.id]).length;
+  head(dayTitle(vd), vd.toLocaleDateString('nl-BE', { weekday: 'long', day: 'numeric', month: 'long' }));
   const r = 34, c = 2 * Math.PI * r, frac = list.length ? n / list.length : 0;
   $('#ring').innerHTML = `<svg viewBox="0 0 84 84"><circle cx="42" cy="42" r="${r}" stroke="rgba(255,255,255,.2)" stroke-width="8" fill="none"/>
     <circle cx="42" cy="42" r="${r}" stroke="#fff" stroke-width="8" fill="none" stroke-linecap="round" stroke-dasharray="${c}" stroke-dashoffset="${c * (1 - frac)}" style="transition:stroke-dashoffset .6s"/></svg><b>${n}/${list.length}</b>`;
 
-  let html = '';
-  if (list.length && n === list.length) html += `<div class="card celebrate"><b>Alles gedaan vandaag! 🎉</b><span class="small">Goed bezig, ${NAME}. Morgen opnieuw.</span></div>`;
-  if (!PREVIEW && !store.get('bannerDone', false)) html += `<div class="banner" id="rb"><div class="e">⏰</div><div><b>Krijg een seintje op het juiste uur</b><div class="small">Tik hier om de herinneringen in je agenda te zetten.</div></div></div>`;
-  if (!list.length && habits.length) html += `<div class="card empty"><div class="big">☕</div>Vandaag staat er niets gepland.<br>Geniet van je rustdag, ${esc(NAME)}.</div>`;
+  let html = `<div class="daynav">
+    <button id="dPrev" aria-label="Vorige dag">‹</button>
+    <button id="dToday" class="${isToday ? 'on' : ''}">${isToday ? 'Vandaag' : '↩ Naar vandaag'}</button>
+    <button id="dNext" aria-label="Volgende dag">›</button></div>`;
+  if (future) html += `<div class="card small" style="text-align:center">Dit staat gepland. Afvinken kan vanaf die dag zelf.</div>`;
+  if (!future && list.length && n === list.length) html += `<div class="card celebrate"><b>Alles gedaan ${isToday ? 'vandaag' : 'die dag'}! 🎉</b><span class="small">Goed bezig, ${esc(NAME)}.${isToday ? ' Morgen opnieuw.' : ''}</span></div>`;
+  if (isToday && !PREVIEW && !store.get('bannerDone', false)) html += `<div class="banner" id="rb"><div class="e">⏰</div><div><b>Krijg een seintje op het juiste uur</b><div class="small">Tik hier om de herinneringen in je agenda te zetten.</div></div></div>`;
+  if (!list.length && habits.length) html += `<div class="card empty"><div class="big">☕</div>${isToday ? 'Vandaag' : 'Op deze dag'} staat er niets gepland.<br>Een rustdag, ${esc(NAME)}.</div>`;
   else if (!list.length) html += `<div class="card empty"><div class="big">🌱</div>Nog geen gewoontes.<br>Begin klein: voeg er één toe bij <b>Gewoontes</b>.</div>`;
   for (const h of list) {
-    const d = done[h.id], late = !d && !h.anytime && h.time <= hm, s = streak(log, h.id);
-    html += `<div class="card habit ${d ? 'done' : ''}" data-id="${h.id}" style="--hc:${col(h)}">
+    const d = done[h.id], late = !d && !future && !h.anytime && (dayOff < 0 || h.time <= hm), s = isToday ? streak(log, h.id) : 0;
+    html += `<div class="card habit ${d ? 'done' : ''} ${future ? 'future' : ''}" data-id="${h.id}" style="--hc:${col(h)}">
       <div class="icon">${h.icon}</div>
       <div class="info"><div class="name">${esc(h.name)}</div>
         <div class="meta">${whenText(h)}
-          ${d ? `<button class="pill editat" aria-label="Uur aanpassen">gedaan om ${d.at} ✎</button>` : late ? '<span class="pill late">nog te doen</span>' : ''}
+          ${d ? `<button class="pill editat" aria-label="Uur aanpassen">gedaan om ${d.at} ✎</button>` : late ? `<span class="pill late">${dayOff < 0 ? 'niet gedaan' : 'nog te doen'}</span>` : ''}
           ${s >= 2 ? `<span class="pill fire">🔥 ${s} dagen</span>` : ''}</div></div>
-      ${d && d.photo ? `<img class="thumb" data-photo="${d.photo}" data-cap="${esc(h.name)}" alt="foto">` : `<button class="cam" aria-label="Foto toevoegen">${CAM}</button>`}
-      <button class="check" aria-label="${d ? 'Niet gedaan' : 'Afvinken'}">${CHECK}</button>
+      ${future ? '' : d && d.photo ? `<img class="thumb" data-photo="${d.photo}" data-cap="${esc(h.name)}" alt="foto">` : `<button class="cam" aria-label="Foto toevoegen">${CAM}</button>`}
+      ${future ? '' : `<button class="check" aria-label="${d ? 'Niet gedaan' : 'Afvinken'}">${CHECK}</button>`}
     </div>`;
   }
   main.innerHTML = html;
+  $('#dPrev').onclick = () => goDay(dayOff - 1);
+  $('#dNext').onclick = () => goDay(dayOff + 1);
+  $('#dToday').onclick = () => goDay(0);
   main.querySelectorAll('.habit').forEach(el => {
     const id = el.dataset.id;
-    el.querySelector('.check').onclick = () => toggle(id, el);
+    const ck = el.querySelector('.check'); if (ck) ck.onclick = () => toggle(id, el);
     const pb = el.querySelector('.cam'); if (pb) pb.onclick = () => pickPhoto(id);
     const ea = el.querySelector('.editat');
     if (ea) ea.onclick = ev => {
       ev.stopPropagation();
-      const k = dayKey(), inp = document.createElement('input');
+      const inp = document.createElement('input');
       inp.type = 'time'; inp.value = log[k][id].at; inp.className = 'attime'; inp.setAttribute('aria-label', 'Hoe laat gedaan');
       ea.replaceWith(inp); inp.focus();
-      const done = () => { if (inp.value) { log[k][id].at = inp.value; save(); } render(); };
-      inp.onchange = done; inp.onblur = done;
+      const fin = () => { if (inp.value) { log[k][id].at = inp.value; save(); } render(); };
+      inp.onchange = fin; inp.onblur = fin;
     };
   });
   const rb = $('#rb'); if (rb) rb.onclick = () => { store.set('bannerDone', true); tab = 'habits'; render(true); };
   loadThumbs();
 }
+// vegen naar links/rechts = volgende/vorige dag
+(() => {
+  let x0 = null, y0 = 0;
+  main.addEventListener('touchstart', e => { if (tab !== 'today') return; x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; }, { passive: true });
+  main.addEventListener('touchend', e => {
+    if (x0 === null || tab !== 'today') return;
+    const dx = e.changedTouches[0].clientX - x0, dy = e.changedTouches[0].clientY - y0; x0 = null;
+    if (Math.abs(dx) > 70 && Math.abs(dx) > Math.abs(dy) * 1.5) goDay(dayOff + (dx < 0 ? 1 : -1));
+  }, { passive: true });
+})();
+function doneAt(h) { return dayOff === 0 ? nowHM() : (h && !h.anytime ? h.time : '12:00'); }
 async function toggle(id, el) {
-  const k = dayKey(); log[k] = log[k] || {};
+  const k = dayKey(viewDate()); log[k] = log[k] || {};
   if (log[k][id]) { if (log[k][id].photo) await photoDel(log[k][id].photo); delete log[k][id]; }
-  else { log[k][id] = { at: nowHM() }; if (navigator.vibrate) navigator.vibrate(30); }
+  else { log[k][id] = { at: doneAt(habits.find(x => x.id === id)) }; if (navigator.vibrate) navigator.vibrate(30); }
   save(); demoLog.cache = null;
   el.classList.toggle('done', !!log[k][id]); el.querySelector('.check').classList.add('pop');
   setTimeout(() => render(), 380);
@@ -247,10 +276,10 @@ let photoTarget = null;
 function pickPhoto(id) { photoTarget = id; $('#photoInput').value = ''; $('#photoInput').click(); }
 $('#photoInput').onchange = async e => {
   const f = e.target.files[0]; if (!f || !photoTarget) return;
-  const k = dayKey(), key = k + '_' + photoTarget;
+  const k = dayKey(viewDate()), key = k + '_' + photoTarget;
   await photoPut(key, await shrink(f));
   log[k] = log[k] || {};
-  log[k][photoTarget] = log[k][photoTarget] || { at: nowHM() };
+  log[k][photoTarget] = log[k][photoTarget] || { at: doneAt(habits.find(x => x.id === photoTarget)) };
   log[k][photoTarget].photo = key;
   save(); render();
 };

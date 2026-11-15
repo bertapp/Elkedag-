@@ -98,6 +98,12 @@ input[type=text],input[type=time]{width:100%;padding:12px;border-radius:12px;bor
 .quick button{border:none;background:var(--soft);color:var(--brand-2);border-radius:99px;padding:6px 12px;font-size:13px;font-weight:700;cursor:pointer}
 select,input[type=date],input[type=number]{width:100%;padding:12px;border-radius:12px;border:1.5px solid var(--line);background:var(--bg);color:var(--ink);font:inherit;font-size:16px;-webkit-appearance:none;appearance:none;min-height:48px}
 .dots i.off{opacity:.25}
+.daynav{display:flex;align-items:center;gap:8px;background:var(--card);border-radius:18px;padding:6px;box-shadow:var(--shadow)}
+.daynav button{border:none;background:transparent;border-radius:12px;cursor:pointer;font:inherit;font-weight:700;color:var(--brand-2);padding:8px 12px}
+.daynav #dPrev,.daynav #dNext{font-size:26px;line-height:1;width:48px;padding:6px 0;background:var(--soft)}
+.daynav #dToday{flex:1;font-size:15px}
+.daynav #dToday.on{color:var(--muted);cursor:default}
+.habit.future{opacity:.75}
 .anyt{display:flex;align-items:center;gap:8px;margin:8px 0 0;font-size:14px;color:var(--ink);font-weight:600;cursor:pointer}
 .anyt input{width:20px;height:20px;accent-color:var(--brand-2)}
 .anybox{padding:12px;border-radius:12px;border:1.5px dashed var(--line);color:var(--muted);font-size:15px}
@@ -166,6 +172,6 @@ button.pill{border:none;cursor:pointer;font:inherit;font-size:12px;font-weight:7
 </nav>
 <div id="viewer"><img alt=""><p id="viewerCap"></p></div>
 <input type="file" id="photoInput" accept="image/*" capture="environment" hidden>
-<script src="app.js?v=13"></script>
+<script src="app.js?v=14"></script>
 </body>
 </html>
