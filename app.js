@@ -1,7 +1,7 @@
 // Elke Dag – app om dagelijkse gezonde gewoontes op te volgen.
 // Alles blijft op de telefoon zelf: gewoontes en vinkjes in localStorage, foto's in IndexedDB.
 
-const VERSION = 11;
+const VERSION = 12;
 const PREVIEW = !!window.PREVIEW; // voorbeeldversie: geen agenda-bestand, meldingen of kopieën
 const $ = s => document.querySelector(s);
 const main = $('#main');
@@ -396,7 +396,7 @@ function renderHabits() {
       ${planEditor(h, 'r')}
       <button class="btn ics1" data-id="${h.id}" ${finished(h) ? 'disabled style="opacity:.5"' : ''}>📆 In mijn agenda zetten</button></div>`).join('')}
     <div class="card stack">
-      <button class="btn ghost" id="notif">🔔 Meldingen in de app toestaan</button>
+      <button class="btn ghost" id="notif">${notifActive() ? '🔕 Meldingen in de app uitzetten' : '🔔 Meldingen in de app aanzetten'}</button>
       <p class="small" id="notifState" style="margin:0"></p></div>
     <div class="h2">Reservekopie</div><div class="card stack">
       <p class="small" style="margin:0">Alles staat enkel op deze telefoon. Bewaar af en toe een kopie (zonder foto's).</p>
@@ -497,13 +497,19 @@ function downloadIcs(list = habits) {
 function icsEsc(s) { return s.replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\n/g, '\\n'); }
 
 // ---------- meldingen terwijl de app open is ----------
+function notifActive() { return 'Notification' in window && Notification.permission === 'granted' && store.get('notifOn', true); }
 function notifStateText() {
   if (!('Notification' in window)) return 'Meldingen in de app werken hier niet. Gebruik de agenda-herinneringen hierboven.';
-  return { granted: 'Meldingen staan aan (werkt wanneer de app open is).', denied: 'Meldingen zijn geweigerd. Je kan dit aanpassen in de instellingen van je telefoon.', default: '' }[Notification.permission];
+  if (Notification.permission === 'denied') return 'Meldingen zijn geweigerd. Je kan dit aanpassen in Instellingen › Meldingen › Elke Dag.';
+  if (notifActive()) return 'Meldingen staan aan (werkt wanneer de app open is).';
+  if (Notification.permission === 'granted') return 'Meldingen staan uit.';
+  return '';
 }
 async function askNotif() {
   if (!('Notification' in window)) { $('#notifState').textContent = notifStateText(); return; }
-  const p = await Notification.requestPermission();
+  if (notifActive()) { store.set('notifOn', false); render(); return; }
+  store.set('notifOn', true);
+  const p = Notification.permission === 'granted' ? 'granted' : await Notification.requestPermission();
   if (p === 'granted') notify('Top! 👍', `Zo krijg je een seintje, ${NAME}.`);
   render();
 }
@@ -521,7 +527,7 @@ function checkReminders() {
   for (const h of habits) {
     if (scheduled(h, addDays(new Date(), 0)) && h.time <= hm && !log[k]?.[h.id] && !notified[k].includes(h.id)) {
       notified[k].push(h.id);
-      if ('Notification' in window && Notification.permission === 'granted') notify(`Hé ${NAME}! ⏰`, `Het is ${hourText(h.time)}: ${h.name}.`);
+      if (notifActive()) notify(`Hé ${NAME}! ⏰`, `Het is ${hourText(h.time)}: ${h.name}.`);
     }
   }
   for (const d of Object.keys(notified)) if (d < k) delete notified[d];
