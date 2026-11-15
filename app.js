@@ -326,6 +326,11 @@ function renderHabits() {
   else html += `<div class="h2">Herinneringen</div><div class="card stack">
       <p class="small" style="margin:0">Zet je gewoontes in de agenda van je telefoon. Die stuurt je dan elke dag op het juiste uur een berichtje, ook als deze app dicht is. Doe dit opnieuw als je iets verandert.</p>
       <button class="btn" id="ics">📆 Zet herinneringen in mijn agenda</button>
+      <details class="small"><summary style="cursor:pointer;font-weight:700;color:var(--brand-2)">Herinneringen weer uit je agenda halen?</summary>
+        <p style="margin:8px 0 0">De app kan je agenda zelf niet aanpassen, maar het gaat zo, per gewoonte:<br>
+        1. Open de app <b>Agenda</b> en tik op de afspraak van je gewoonte.<br>
+        2. Tik onderaan op <b>Verwijder activiteit</b>.<br>
+        3. Kies <b>Verwijder alle toekomstige activiteiten</b>.</p></details>
       <button class="btn ghost" id="notif">🔔 Meldingen in de app toestaan</button>
       <p class="small" id="notifState" style="margin:0"></p></div>
     <div class="h2">Reservekopie</div><div class="card stack">
