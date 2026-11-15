@@ -1,7 +1,7 @@
 // Elke Dag – app om dagelijkse gezonde gewoontes op te volgen.
 // Alles blijft op de telefoon zelf: gewoontes en vinkjes in localStorage, foto's in IndexedDB.
 
-const VERSION = 9;
+const VERSION = 10;
 const PREVIEW = !!window.PREVIEW; // voorbeeldversie: geen agenda-bestand, meldingen of kopieën
 const $ = s => document.querySelector(s);
 const main = $('#main');
@@ -517,7 +517,28 @@ function checkReminders() {
 }
 
 // ---------- start ----------
-if (!PREVIEW && 'serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => { });
+if (!PREVIEW && 'serviceWorker' in navigator) navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).catch(() => { });
+
+// Nieuwe versie online? Dan verschijnt bovenaan een balk; één tik haalt ze binnen. Je gegevens blijven staan.
+async function checkUpdate() {
+  if (PREVIEW) return;
+  try {
+    const v = (await (await fetch('version.json?t=' + Date.now(), { cache: 'no-store' })).json()).version;
+    if (v > VERSION && !$('#upd')) {
+      const b = document.createElement('button');
+      b.id = 'upd'; b.className = 'updbar'; b.textContent = '✨ Nieuwe versie van Elke Dag. Tik om te vernieuwen.';
+      b.onclick = async () => {
+        b.textContent = 'Even geduld…';
+        try { const reg = await navigator.serviceWorker?.getRegistration(); await reg?.update(); } catch { }
+        try { for (const k of await caches.keys()) await caches.delete(k); } catch { }
+        location.reload();
+      };
+      document.body.appendChild(b);
+    }
+  } catch { }
+}
+checkUpdate();
+document.addEventListener('visibilitychange', () => { if (!document.hidden) checkUpdate(); });
 render(true);
 checkReminders();
 setInterval(() => { checkReminders(); if (tab === 'today' && !document.activeElement?.matches('input')) renderToday(); }, 60000);
