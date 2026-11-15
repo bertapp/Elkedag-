@@ -1,7 +1,7 @@
 // Elke Dag – app om dagelijkse gezonde gewoontes op te volgen.
 // Alles blijft op de telefoon zelf: gewoontes en vinkjes in localStorage, foto's in IndexedDB.
 
-const VERSION = 8;
+const VERSION = 9;
 const PREVIEW = !!window.PREVIEW; // voorbeeldversie: geen agenda-bestand, meldingen of kopieën
 const $ = s => document.querySelector(s);
 const main = $('#main');
@@ -389,11 +389,6 @@ function renderHabits() {
       <p class="small" style="margin:0">Zet je gewoontes in de agenda van je telefoon. Die stuurt je dan op de gekozen dagen en het juiste uur een berichtje, ook als deze app dicht is. Doe dit opnieuw als je iets verandert.</p>
       <div class="small" style="background:var(--bg);border-radius:12px;padding:10px 12px"><b style="color:var(--ink)">Dit komt in je agenda:</b><br>${sortedHabits().filter(h => !finished(h)).map(h => `${h.icon} ${esc(h.name)}: ${planText(h)}`).join('<br>') || 'Niets: geen lopende gewoontes.'}</div>
       <button class="btn" id="ics">📆 Zet herinneringen in mijn agenda</button>
-      <details class="small"><summary style="cursor:pointer;font-weight:700;color:var(--brand-2)">Herinneringen weer uit je agenda halen?</summary>
-        <p style="margin:8px 0 0">De app kan je agenda zelf niet aanpassen, maar het gaat zo, per gewoonte:<br>
-        1. Open de app <b>Agenda</b> en tik op de afspraak van je gewoonte.<br>
-        2. Tik onderaan op <b>Verwijder activiteit</b>.<br>
-        3. Kies <b>Verwijder alle toekomstige activiteiten</b>.</p></details>
       <button class="btn ghost" id="notif">🔔 Meldingen in de app toestaan</button>
       <p class="small" id="notifState" style="margin:0"></p></div>
     <div class="h2">Reservekopie</div><div class="card stack">
