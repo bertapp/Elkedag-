@@ -101,6 +101,10 @@ select,input[type=date],input[type=number]{width:100%;padding:12px;border-radius
 .seg{display:grid;grid-template-columns:repeat(2,1fr);gap:4px;background:var(--bg);border:1.5px solid var(--line);border-radius:12px;padding:3px}
 .seg button{border:none;background:transparent;border-radius:9px;padding:9px 2px;font:inherit;font-size:13px;font-weight:700;color:var(--muted);cursor:pointer}
 .seg button.on{background:var(--hc,var(--brand-2));color:var(--on-brand)}
+.note,.addnote{display:block;text-align:left;border:none;background:transparent;padding:6px 0 0;font:inherit;font-size:14px;color:var(--ink);cursor:pointer;white-space:pre-wrap;word-break:break-word}
+.addnote{color:var(--brand-2);font-weight:700;font-size:13px}
+.notebox{display:flex;flex-direction:column;gap:8px;margin-top:8px}
+.notebox textarea{width:100%;padding:10px;border-radius:12px;border:1.5px solid var(--brand-2);background:var(--bg);color:var(--ink);font:inherit;font-size:16px;resize:vertical}
 .daynav{display:flex;align-items:center;gap:8px;background:var(--card);border-radius:18px;padding:6px;box-shadow:var(--shadow)}
 .daynav button{border:none;background:transparent;border-radius:12px;cursor:pointer;font:inherit;font-weight:700;color:var(--brand-2);padding:8px 12px}
 .daynav #dPrev,.daynav #dNext{font-size:26px;line-height:1;width:48px;padding:6px 0;background:var(--soft)}
@@ -175,6 +179,6 @@ button.pill{border:none;cursor:pointer;font:inherit;font-size:12px;font-weight:7
 </nav>
 <div id="viewer"><img alt=""><p id="viewerCap"></p></div>
 <input type="file" id="photoInput" accept="image/*" capture="environment" hidden>
-<script src="app.js?v=15"></script>
+<script src="app.js?v=16"></script>
 </body>
 </html>

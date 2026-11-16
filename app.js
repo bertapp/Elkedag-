@@ -1,7 +1,7 @@
 // Elke Dag – app om dagelijkse gezonde gewoontes op te volgen.
 // Alles blijft op de telefoon zelf: gewoontes en vinkjes in localStorage, foto's in IndexedDB.
 
-const VERSION = 15;
+const VERSION = 16;
 const PREVIEW = !!window.PREVIEW; // voorbeeldversie: geen agenda-bestand, meldingen of kopieën
 const $ = s => document.querySelector(s);
 const main = $('#main');
@@ -233,7 +233,8 @@ function renderToday() {
       <div class="info"><div class="name">${esc(h.name)}</div>
         <div class="meta">${whenText(h)}
           ${d ? `<button class="pill editat" aria-label="Uur aanpassen">gedaan om ${d.at} ✎</button>` : late ? `<span class="pill late">${dayOff < 0 ? 'niet gedaan' : 'nog te doen'}</span>` : ''}
-          ${s >= 2 ? `<span class="pill fire">🔥 ${s} dagen</span>` : ''}</div></div>
+          ${s >= 2 ? `<span class="pill fire">🔥 ${s} dagen</span>` : ''}</div>
+        ${d ? (d.note ? `<button class="note editnote" aria-label="Notitie aanpassen">📝 ${esc(d.note)}</button>` : `<button class="addnote editnote">+ Wat heb je gedaan?</button>`) : ''}</div>
       ${future ? '' : d && d.photo ? `<img class="thumb" data-photo="${d.photo}" data-cap="${esc(h.name)}" alt="foto">` : `<button class="cam" aria-label="Foto toevoegen">${CAM}</button>`}
       ${future ? '' : `<button class="check" aria-label="${d ? 'Niet gedaan' : 'Afvinken'}">${CHECK}</button>`}
     </div>`;
@@ -246,6 +247,8 @@ function renderToday() {
     const id = el.dataset.id;
     const ck = el.querySelector('.check'); if (ck) ck.onclick = () => toggle(id, el);
     const pb = el.querySelector('.cam'); if (pb) pb.onclick = () => pickPhoto(id);
+    const en = el.querySelector('.editnote');
+    if (en) en.onclick = ev => { ev.stopPropagation(); editNote(el, k, id); };
     const ea = el.querySelector('.editat');
     if (ea) ea.onclick = ev => {
       ev.stopPropagation();
@@ -269,6 +272,15 @@ function renderToday() {
     if (Math.abs(dx) > 70 && Math.abs(dx) > Math.abs(dy) * 1.5) goDay(dayOff + (dx < 0 ? 1 : -1));
   }, { passive: true });
 })();
+function editNote(el, k, id) {
+  const box = document.createElement('div'); box.className = 'notebox';
+  box.innerHTML = `<textarea rows="3" placeholder="bv. 30 keer curls, 3 x 10 push-ups…" aria-label="Wat heb je gedaan?"></textarea><button class="btn" style="padding:10px">Bewaar</button>`;
+  const ta = box.querySelector('textarea'); ta.value = log[k][id].note || '';
+  el.querySelector('.editnote').replaceWith(box); ta.focus();
+  const fin = () => { const v = ta.value.trim(); if (v) log[k][id].note = v; else delete log[k][id].note; save(); render(); };
+  box.querySelector('button').onclick = ev => { ev.stopPropagation(); fin(); };
+  ta.onclick = ev => ev.stopPropagation();
+}
 function doneAt(h) { return dayOff === 0 ? nowHM() : (h && remindAt(h)) || '12:00'; }
 async function toggle(id, el) {
   const k = dayKey(viewDate()); log[k] = log[k] || {};
@@ -276,7 +288,8 @@ async function toggle(id, el) {
   else { log[k][id] = { at: doneAt(habits.find(x => x.id === id)) }; if (navigator.vibrate) navigator.vibrate(30); }
   save(); demoLog.cache = null;
   el.classList.toggle('done', !!log[k][id]); el.querySelector('.check').classList.add('pop');
-  setTimeout(() => render(), 380);
+  const nowDone = !!log[k][id];
+  setTimeout(() => { render(); if (nowDone && tab === 'today') { const c = main.querySelector(`.habit[data-id="${id}"]`); if (c && c.querySelector('.addnote')) editNote(c, k, id); } }, 380);
 }
 let photoTarget = null;
 function pickPhoto(id) { photoTarget = id; $('#photoInput').value = ''; $('#photoInput').click(); }
@@ -292,7 +305,7 @@ $('#photoInput').onchange = async e => {
 async function loadThumbs() {
   for (const img of main.querySelectorAll('img[data-photo]')) {
     const src = await photoGet(img.dataset.photo);
-    if (src) { img.src = src; img.closest('figure, .habit').addEventListener('click', ev => { if (ev.target.closest('.check, .editat, input')) return; if (ev.target === img || img.closest('figure')) openViewer(src, img.dataset.cap); }); }
+    if (src) { img.src = src; img.closest('figure, .habit').addEventListener('click', ev => { if (ev.target.closest('.check, .editat, .editnote, .notebox, input')) return; if (ev.target === img || img.closest('figure')) openViewer(src, img.dataset.cap); }); }
   }
 }
 function openViewer(src, cap) { $('#viewer img').src = src; $('#viewerCap').textContent = cap || ''; $('#viewer').style.display = 'flex'; }
@@ -394,7 +407,7 @@ function renderPhotos() {
   const byMonth = {};
   for (const it of items) (byMonth[it.k.slice(0, 7)] = byMonth[it.k.slice(0, 7)] || []).push(it);
   main.innerHTML = Object.entries(byMonth).map(([m, its]) => `<div class="h2">${new Date(m + '-15').toLocaleDateString('nl-BE', { month: 'long', year: 'numeric' })}</div>
-    <div class="gallery">${its.map(it => { const d = new Date(it.k + 'T12:00'); const cap = `${it.h ? it.h.name : ''} · ${d.toLocaleDateString('nl-BE', { weekday: 'long', day: 'numeric', month: 'long' })}`; return `<figure><img data-photo="${it.v.photo}" data-cap="${esc(cap)}" alt=""><figcaption>${it.h ? it.h.icon : ''} ${d.getDate()}/${d.getMonth() + 1}</figcaption></figure>`; }).join('')}</div>`).join('');
+    <div class="gallery">${its.map(it => { const d = new Date(it.k + 'T12:00'); const cap = `${it.h ? it.h.name : ''}${it.v.note ? ': ' + it.v.note : ''} · ${d.toLocaleDateString('nl-BE', { weekday: 'long', day: 'numeric', month: 'long' })}`; return `<figure><img data-photo="${it.v.photo}" data-cap="${esc(cap)}" alt=""><figcaption>${it.h ? it.h.icon : ''} ${d.getDate()}/${d.getMonth() + 1}</figcaption></figure>`; }).join('')}</div>`).join('');
   loadThumbs();
 }
 
@@ -608,5 +621,5 @@ checkUpdate();
 document.addEventListener('visibilitychange', () => { if (!document.hidden) checkUpdate(); });
 render(true);
 checkReminders();
-setInterval(() => { checkReminders(); if (tab === 'today' && !document.activeElement?.matches('input')) renderToday(); }, 60000);
+setInterval(() => { checkReminders(); if (tab === 'today' && !document.activeElement?.matches('input, textarea')) renderToday(); }, 60000);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) { checkReminders(); if (tab === 'today') render(); } });
