@@ -1,7 +1,7 @@
 // Elke Dag – app om dagelijkse gezonde gewoontes op te volgen.
 // Alles blijft op de telefoon zelf: gewoontes en vinkjes in localStorage, foto's in IndexedDB.
 
-const VERSION = 16;
+const VERSION = 17;
 const PREVIEW = !!window.PREVIEW; // voorbeeldversie: geen agenda-bestand, meldingen of kopieën
 const $ = s => document.querySelector(s);
 const main = $('#main');
@@ -198,6 +198,7 @@ function renderWelcome() {
 
 // ---------- vandaag ----------
 function groet(d) { const h = d.getHours(); return (h < 6 ? 'Goeienacht' : h < 12 ? 'Goeiemorgen' : h < 18 ? 'Goeiemiddag' : 'Goeienavond') + ` ${NAME}`; }
+const openNotes = new Set(); // notities die opengeklapt zijn
 let dayOff = 0; // 0 = vandaag, -1 = gisteren, 1 = morgen ...
 function viewDate() { return addDays(new Date(), dayOff); }
 function dayTitle(d) {
@@ -233,8 +234,9 @@ function renderToday() {
       <div class="info"><div class="name">${esc(h.name)}</div>
         <div class="meta">${whenText(h)}
           ${d ? `<button class="pill editat" aria-label="Uur aanpassen">gedaan om ${d.at} ✎</button>` : late ? `<span class="pill late">${dayOff < 0 ? 'niet gedaan' : 'nog te doen'}</span>` : ''}
+          ${d && d.note ? `<button class="pill notepill ${openNotes.has(k + h.id) ? 'on' : ''}" aria-label="Toon wat je gedaan hebt">📝</button>` : ''}
           ${s >= 2 ? `<span class="pill fire">🔥 ${s} dagen</span>` : ''}</div>
-        ${d ? (d.note ? `<button class="note editnote" aria-label="Notitie aanpassen">📝 ${esc(d.note)}</button>` : `<button class="addnote editnote">+ Wat heb je gedaan?</button>`) : ''}</div>
+        ${d ? (d.note ? (openNotes.has(k + h.id) ? `<div class="noteopen"><div class="note">${esc(d.note)}</div><button class="addnote editnote">✎ Aanpassen</button></div>` : '') : `<button class="addnote editnote">+ Wat heb je gedaan?</button>`) : ''}</div>
       ${future ? '' : d && d.photo ? `<img class="thumb" data-photo="${d.photo}" data-cap="${esc(h.name)}" alt="foto">` : `<button class="cam" aria-label="Foto toevoegen">${CAM}</button>`}
       ${future ? '' : `<button class="check" aria-label="${d ? 'Niet gedaan' : 'Afvinken'}">${CHECK}</button>`}
     </div>`;
@@ -247,6 +249,8 @@ function renderToday() {
     const id = el.dataset.id;
     const ck = el.querySelector('.check'); if (ck) ck.onclick = () => toggle(id, el);
     const pb = el.querySelector('.cam'); if (pb) pb.onclick = () => pickPhoto(id);
+    const np = el.querySelector('.notepill');
+    if (np) np.onclick = ev => { ev.stopPropagation(); openNotes.has(k + id) ? openNotes.delete(k + id) : openNotes.add(k + id); render(); };
     const en = el.querySelector('.editnote');
     if (en) en.onclick = ev => { ev.stopPropagation(); editNote(el, k, id); };
     const ea = el.querySelector('.editat');
@@ -276,7 +280,7 @@ function editNote(el, k, id) {
   const box = document.createElement('div'); box.className = 'notebox';
   box.innerHTML = `<textarea rows="3" placeholder="bv. 30 keer curls, 3 x 10 push-ups…" aria-label="Wat heb je gedaan?"></textarea><button class="btn" style="padding:10px">Bewaar</button>`;
   const ta = box.querySelector('textarea'); ta.value = log[k][id].note || '';
-  el.querySelector('.editnote').replaceWith(box); ta.focus();
+  (el.querySelector('.noteopen') || el.querySelector('.editnote')).replaceWith(box); ta.focus();
   const fin = () => { const v = ta.value.trim(); if (v) log[k][id].note = v; else delete log[k][id].note; save(); render(); };
   box.querySelector('button').onclick = ev => { ev.stopPropagation(); fin(); };
   ta.onclick = ev => ev.stopPropagation();
@@ -305,7 +309,7 @@ $('#photoInput').onchange = async e => {
 async function loadThumbs() {
   for (const img of main.querySelectorAll('img[data-photo]')) {
     const src = await photoGet(img.dataset.photo);
-    if (src) { img.src = src; img.closest('figure, .habit').addEventListener('click', ev => { if (ev.target.closest('.check, .editat, .editnote, .notebox, input')) return; if (ev.target === img || img.closest('figure')) openViewer(src, img.dataset.cap); }); }
+    if (src) { img.src = src; img.closest('figure, .habit').addEventListener('click', ev => { if (ev.target.closest('.check, .editat, .editnote, .notebox, .notepill, .noteopen, input')) return; if (ev.target === img || img.closest('figure')) openViewer(src, img.dataset.cap); }); }
   }
 }
 function openViewer(src, cap) { $('#viewer img').src = src; $('#viewerCap').textContent = cap || ''; $('#viewer').style.display = 'flex'; }
