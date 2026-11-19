@@ -1,7 +1,7 @@
 // Elke Dag – app om dagelijkse gezonde gewoontes op te volgen.
 // Alles blijft op de telefoon zelf: gewoontes en vinkjes in localStorage, foto's in IndexedDB.
 
-const VERSION = 21;
+const VERSION = 23;
 const PREVIEW = !!window.PREVIEW; // voorbeeldversie: geen agenda-bestand, meldingen of kopieën
 const $ = s => document.querySelector(s);
 const main = $('#main');
@@ -19,7 +19,7 @@ const store = {
 let NAME = store.get('name', '');
 let habits = store.get('habits', null);
 if (!habits) habits = [{ id: uid(), name: '1 minuut armspieroefeningen', time: '10:00', color: 'teal', icon: '💪' }];
-habits.forEach((h, i) => { h.color = h.color || COLORS[i % COLORS.length]; h.icon = h.icon || ICONS[i % ICONS.length]; h.created = h.created || dayKey(); h.days = h.days || [...ALL_DAYS]; h.start = h.start || h.created; h.endType = h.endType || 'never'; });
+habits.forEach((h, i) => { h.color = h.color || COLORS[i % COLORS.length]; h.icon = h.icon || ICONS[i % ICONS.length]; h.created = h.created || dayKey(); h.days = h.days || [...ALL_DAYS]; h.start = h.start || h.created; h.endType = h.endType || 'never'; if (h.timer === undefined) h.timer = /zen/i.test(h.name); });
 let log = store.get('log', {});          // { 'YYYY-MM-DD': { habitId: { at, photo } } }
 let notified = store.get('notified', {}); // { 'YYYY-MM-DD': [habitId] }
 let demo = false;                         // voorbeeldgegevens tonen in het overzicht
@@ -233,10 +233,11 @@ function renderToday() {
       <div class="icon">${h.icon}</div>
       <div class="info"><div class="name">${esc(h.name)}</div>
         <div class="meta">${whenText(h)}
-          ${d ? '<span class="pill">gedaan</span>' : late ? `<span class="pill late">${dayOff < 0 ? 'niet gedaan' : 'nog te doen'}</span>` : ''}
+          ${d ? `<span class="pill">gedaan${d.dur ? ` · ⏱ ${d.dur} min` : ''}</span>` : late ? `<span class="pill late">${dayOff < 0 ? 'niet gedaan' : 'nog te doen'}</span>` : ''}
           ${d && d.note ? `<button class="pill notepill ${openNotes.has(k + h.id) ? 'on' : ''}" aria-label="Toon wat je gedaan hebt">📝</button>` : ''}
           ${s >= 2 ? `<span class="pill fire">🔥 ${s} dagen</span>` : ''}</div>
         ${d ? (d.note ? (openNotes.has(k + h.id) ? `<div class="noteopen"><div class="note">${esc(d.note)}</div><button class="addnote editnote">✎ Aanpassen</button></div>` : '') : `<button class="addnote editnote">+ Wat heb je gedaan?</button>`) : ''}</div>
+      ${h.timer && !d && dayOff === 0 ? `<button class="cam tmr" aria-label="Start timer">⏱</button>` : ''}
       ${future ? '' : d && d.photo ? `<img class="thumb" data-photo="${d.photo}" data-cap="${esc(h.name)}" alt="foto">` : `<button class="cam" aria-label="Foto toevoegen">${CAM}</button>`}
       ${future ? '' : `<button class="check" aria-label="${d ? 'Niet gedaan' : 'Afvinken'}">${CHECK}</button>`}
     </div>`;
@@ -248,7 +249,8 @@ function renderToday() {
   main.querySelectorAll('.habit').forEach(el => {
     const id = el.dataset.id;
     const ck = el.querySelector('.check'); if (ck) ck.onclick = () => toggle(id, el);
-    const pb = el.querySelector('.cam'); if (pb) pb.onclick = () => pickPhoto(id);
+    const pb = el.querySelector('.cam:not(.tmr)'); if (pb) pb.onclick = () => pickPhoto(id);
+    const tb = el.querySelector('.tmr'); if (tb) tb.onclick = ev => { ev.stopPropagation(); openTimer(id); };
     const np = el.querySelector('.notepill');
     if (np) np.onclick = ev => { ev.stopPropagation(); openNotes.has(k + id) ? openNotes.delete(k + id) : openNotes.add(k + id); render(); };
     const en = el.querySelector('.editnote');
@@ -276,6 +278,83 @@ function renderToday() {
     if (Math.abs(dx) > 70 && Math.abs(dx) > Math.abs(dy) * 1.5) goDay(dayOff + (dx < 0 ? 1 : -1));
   }, { passive: true });
 })();
+// ---------- timer ----------
+// Kies de duur, start, en als de tijd om is: geluid, trilling en de gewoonte wordt afgevinkt.
+// We rekenen met een eindtijdstip, zodat de timer klopt ook als het scherm even uit ging.
+let timer = null; // { id, end, total, paused, left, tick, lock }
+function openTimer(id) {
+  const h = habits.find(x => x.id === id); if (!h) return;
+  const last = store.get('timerMin_' + id, 3);
+  const ov = document.createElement('div'); ov.id = 'timerOv'; ov.className = 'timerov';
+  ov.innerHTML = `<div class="tbox" style="--hc:${col(h)}">
+    <div class="small" style="text-align:center">${h.icon} ${esc(h.name)}</div>
+    <div class="tpick"><b>Hoe lang wil je het doen?</b>
+      <div class="chips tmins">${[1, 2, 3, 5, 10, 15, 20].map(m => `<button class="chip ${m === last ? 'on' : ''}" data-m="${m}">${m}</button>`).join('')}</div>
+      <div class="row" style="align-items:center"><input type="number" inputmode="numeric" min="1" max="180" id="tmCustom" value="${last}" aria-label="Aantal minuten"><span style="flex:0 0 auto">minuten</span></div>
+      <button class="btn" id="tmStart">▶ Start</button></div>
+    <div class="trun" hidden>
+      <div class="tring"><svg viewBox="0 0 200 200"><circle cx="100" cy="100" r="88" stroke="var(--line)" stroke-width="12" fill="none"/>
+        <circle id="tmArc" cx="100" cy="100" r="88" stroke="var(--hc)" stroke-width="12" fill="none" stroke-linecap="round" stroke-dasharray="553" stroke-dashoffset="0" transform="rotate(-90 100 100)"/></svg>
+        <b id="tmLeft">3:00</b></div>
+      <div class="row"><button class="btn ghost" id="tmPause">⏸ Pauze</button><button class="btn ghost" id="tmStop">✕ Stop</button></div>
+      <p class="small" style="text-align:center;margin:0">Laat de app open staan, dan hoor je het signaal.</p></div>
+    <button class="addnote" id="tmClose" style="align-self:center">Sluiten</button></div>`;
+  document.body.appendChild(ov);
+  ov.querySelectorAll('.tmins .chip').forEach(b => b.onclick = () => { ov.querySelectorAll('.tmins .chip').forEach(x => x.classList.toggle('on', x === b)); $('#tmCustom').value = b.dataset.m; });
+  $('#tmStart').onclick = () => { const m = Math.max(1, Math.min(180, parseInt($('#tmCustom').value, 10) || 3)); store.set('timerMin_' + id, m); startTimer(id, m); };
+  $('#tmClose').onclick = closeTimer;
+  $('#tmStop').onclick = closeTimer;
+  $('#tmPause').onclick = () => {
+    if (!timer) return;
+    if (timer.paused) { timer.end = Date.now() + timer.left; timer.paused = false; $('#tmPause').textContent = '⏸ Pauze'; }
+    else { timer.left = timer.end - Date.now(); timer.paused = true; $('#tmPause').textContent = '▶ Verder'; }
+  };
+}
+let audioCtx = null;
+function beep(times = 3) {
+  try {
+    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+    for (let i = 0; i < times; i++) {
+      const o = audioCtx.createOscillator(), g = audioCtx.createGain(), t = audioCtx.currentTime + i * 0.45;
+      o.frequency.value = 880; o.connect(g); g.connect(audioCtx.destination);
+      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.4, t + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.35);
+      o.start(t); o.stop(t + 0.4);
+    }
+  } catch { }
+  if (navigator.vibrate) navigator.vibrate([300, 150, 300, 150, 300]);
+}
+async function startTimer(id, m) {
+  try { audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)(); audioCtx.resume(); } catch { } // geluid "ontgrendelen" bij de tik
+  const ov = $('#timerOv'); ov.querySelector('.tpick').hidden = true; ov.querySelector('.trun').hidden = false; $('#tmClose').hidden = true;
+  timer = { id, total: m * 60000, end: Date.now() + m * 60000, paused: false, left: 0, min: m };
+  try { timer.lock = await navigator.wakeLock?.request('screen'); } catch { }
+  const tick = () => {
+    if (!timer) return;
+    const left = timer.paused ? timer.left : Math.max(0, timer.end - Date.now());
+    const sec = Math.ceil(left / 1000);
+    $('#tmLeft').textContent = `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
+    $('#tmArc').setAttribute('stroke-dashoffset', String(553 * (1 - left / timer.total)));
+    if (!timer.paused && left <= 0) return finishTimer();
+    timer.tick = requestAnimationFrame(tick);
+  };
+  tick();
+}
+function finishTimer() {
+  const { id, min } = timer; stopTimerOnly();
+  beep();
+  const k = dayKey(); log[k] = log[k] || {};
+  log[k][id] = { ...(log[k][id] || {}), at: (log[k][id] && log[k][id].at) || nowHM(), dur: min };
+  save(); demoLog.cache = null;
+  const ov = $('#timerOv');
+  if (ov) {
+    ov.querySelector('.trun').innerHTML = `<div style="text-align:center;font-size:56px">🎉</div><b style="text-align:center;font-size:20px">Klaar! ${min} minuten gedaan.</b><div class="small" style="text-align:center">Afgevinkt voor vandaag.</div>`;
+    $('#tmClose').hidden = false; $('#tmClose').textContent = 'Sluiten';
+  }
+  dayOff = 0; render();
+}
+function stopTimerOnly() { if (!timer) return; cancelAnimationFrame(timer.tick); try { timer.lock?.release(); } catch { } timer = null; }
+function closeTimer() { stopTimerOnly(); $('#timerOv')?.remove(); render(); }
+
 function editNote(el, k, id) {
   const box = document.createElement('div'); box.className = 'notebox';
   box.innerHTML = `<textarea rows="3" placeholder="bv. 30 keer curls, 3 x 10 push-ups…" aria-label="Wat heb je gedaan?"></textarea><button class="btn" style="padding:10px">Bewaar</button>`;
@@ -388,7 +467,7 @@ function dayPanel(lg, off) {
   const d = addDays(new Date(), off), k = dayKey(d), done = lg[k] || {};
   const list = sortedHabits().filter(h => scheduled(h, d) || done[h.id]);
   const rows = list.map(h => { const e = done[h.id]; return `<div class="prow" style="--hc:${col(h)}"><span class="pmark ${e ? 'ok' : ''}">${e ? '✓' : '–'}</span>
-      <div style="flex:1;min-width:0"><b>${h.icon} ${esc(h.name)}</b>${e && e.note ? `<div class="small" style="white-space:pre-wrap">📝 ${esc(e.note)}</div>` : ''}</div>
+      <div style="flex:1;min-width:0"><b>${h.icon} ${esc(h.name)}</b>${e && e.dur ? `<div class="small">⏱ ${e.dur} min</div>` : ''}${e && e.note ? `<div class="small" style="white-space:pre-wrap">📝 ${esc(e.note)}</div>` : ''}</div>
       ${e && e.photo && !demo ? `<img class="pthumb" data-photo="${e.photo}" data-cap="${esc(h.name)}" alt="">` : ''}</div>`; }).join('');
   const n = list.filter(h => done[h.id]).length;
   return `<div class="panel"><div class="legend" style="margin:0 0 6px"><b>${(t => t.charAt(0).toUpperCase() + t.slice(1))(d.toLocaleDateString('nl-BE', { weekday: 'long', day: 'numeric', month: 'long' }))}</b><span class="small">${list.length ? `${n} van ${list.length}` : 'niets gepland'}</span></div>
@@ -445,6 +524,7 @@ function editor(h) {
       ${whenOf(h) === 'time' ? `<input type="time" id="t-${h.id}" class="ht" value="${h.time}" aria-label="Hoe laat" style="margin-top:8px">` : ''}</div>
       ${h.id !== 'new' ? '<div style="flex:0 0 auto"><button class="btn danger del">Wis</button></div>' : ''}</div>
     ${planEditor(h, 'g')}
+    <label class="anyt"><input type="checkbox" class="htimer" ${h.timer ? 'checked' : ''}> ⏱ Met timer (kies de duur op het moment zelf)</label>
     <div><label>Kleur</label><div class="swatches">${COLORS.map(c => `<button class="sw ${h.color === c ? 'on' : ''}" data-c="${c}" style="--c:var(--c-${c})" aria-label="${c}"></button>`).join('')}</div></div>
     <div><label>Icoon</label><div class="icons">${ICONS.map(i => `<button class="ic ${h.icon === i ? 'on' : ''}" data-i="${i}">${i}</button>`).join('')}</div></div></div>`;
 }
@@ -499,6 +579,7 @@ function renderHabits() {
     el.querySelectorAll('.seg button').forEach(b => b.onclick = () => { h.when = b.dataset.w; delete h.anytime; if (id !== 'new') save(); render(); });
     const ht = el.querySelector('.ht'); if (ht) ht.onchange = e => { if (e.target.value) { h.time = e.target.value; if (id !== 'new') { save(); render(); } } };
     bindPlan(el, h, id);
+    el.querySelector('.htimer').onchange = e => { h.timer = e.target.checked; if (id !== 'new') save(); render(); };
     el.querySelectorAll('.sw').forEach(b => b.onclick = () => { h.color = b.dataset.c; if (id !== 'new') save(); render(); });
     el.querySelectorAll('.ic').forEach(b => b.onclick = () => { h.icon = b.dataset.i; if (id !== 'new') save(); render(); });
     const del = el.querySelector('.del');
@@ -620,6 +701,21 @@ function checkReminders() {
   for (const d of Object.keys(notified)) if (d < k) delete notified[d];
   save();
 }
+
+// ---------- openingsscherm (± 4 seconden, tik om over te slaan) ----------
+(function splash() {
+  const el = $('#splash'); if (!el) return;
+  const Q = ['Kleine stappen, elke dag. Dat is het hele geheim.', 'Je hoeft niet perfect te zijn. Gewoon bezig blijven.', 'Eén minuut is beter dan geen minuut.',
+    'Wat je vandaag doet, voel je morgen.', 'Gewoontes bouw je niet in een dag. Wel elke dag.', 'Begin waar je bent. Doe wat je kan.', 'Je lichaam bedankt je later.'];
+  $('#splashQ').textContent = Q[Math.floor(Math.random() * Q.length)];
+  const t = new Date().getHours();
+  $('#splashG').textContent = NAME ? `${t < 12 ? 'Goeiemorgen' : t < 18 ? 'Goeiemiddag' : 'Goeienavond'}, ${NAME}` : '';
+  const fast = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+  let gone = false;
+  const hide = () => { if (gone) return; gone = true; el.classList.add('out'); setTimeout(() => el.remove(), 650); };
+  el.addEventListener('click', hide);
+  setTimeout(hide, fast ? 1200 : 4000);
+})();
 
 // ---------- start ----------
 if (!PREVIEW && 'serviceWorker' in navigator) navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).catch(() => { });
