@@ -1,7 +1,7 @@
 // Elke Dag – app om dagelijkse gezonde gewoontes op te volgen.
 // Alles blijft op de telefoon zelf: gewoontes en vinkjes in localStorage, foto's in IndexedDB.
 
-const VERSION = 24;
+const VERSION = 25;
 const PREVIEW = !!window.PREVIEW; // voorbeeldversie: geen agenda-bestand, meldingen of kopieën
 const $ = s => document.querySelector(s);
 const main = $('#main');
@@ -291,18 +291,17 @@ function openTimer(id) {
     <div class="tpick"><b>Hoe lang wil je het doen?</b>
       <div class="chips tmins">${[1, 2, 3, 5, 10, 15, 20].map(m => `<button class="chip ${m === last ? 'on' : ''}" data-m="${m}">${m}</button>`).join('')}</div>
       <div class="row" style="align-items:center"><input type="number" inputmode="numeric" min="1" max="180" id="tmCustom" value="${last}" aria-label="Aantal minuten"><span style="flex:0 0 auto">minuten</span></div>
-      <label class="anyt"><input type="checkbox" id="tmMusic" ${store.get('timerMusic', /zen/i.test(h.name)) ? 'checked' : ''}> 🎵 Rustige muziek tijdens de timer</label>
       <button class="btn" id="tmStart">▶ Start</button></div>
     <div class="trun" hidden>
       <div class="tring"><svg viewBox="0 0 200 200"><circle cx="100" cy="100" r="88" stroke="var(--line)" stroke-width="12" fill="none"/>
         <circle id="tmArc" cx="100" cy="100" r="88" stroke="var(--hc)" stroke-width="12" fill="none" stroke-linecap="round" stroke-dasharray="553" stroke-dashoffset="0" transform="rotate(-90 100 100)"/></svg>
         <b id="tmLeft">3:00</b></div>
       <div class="row"><button class="btn ghost" id="tmPause">⏸ Pauze</button><button class="btn ghost" id="tmStop">✕ Stop</button></div>
-      <p class="small" style="text-align:center;margin:0">Laat de app open staan en zet je iPhone niet op stil, dan hoor je de muziek en de gong.</p></div>
+      <p class="small" style="text-align:center;margin:0">Laat de app open staan en zet je iPhone niet op stil, dan hoor je de gong.</p></div>
     <button class="addnote" id="tmClose" style="align-self:center">Sluiten</button></div>`;
   document.body.appendChild(ov);
   ov.querySelectorAll('.tmins .chip').forEach(b => b.onclick = () => { ov.querySelectorAll('.tmins .chip').forEach(x => x.classList.toggle('on', x === b)); $('#tmCustom').value = b.dataset.m; });
-  $('#tmStart').onclick = () => { const m = Math.max(1, Math.min(180, parseInt($('#tmCustom').value, 10) || 3)); store.set('timerMin_' + id, m); store.set('timerMusic', $('#tmMusic').checked); startTimer(id, m, $('#tmMusic').checked); };
+  $('#tmStart').onclick = () => { const m = Math.max(1, Math.min(180, parseInt($('#tmCustom').value, 10) || 3)); store.set('timerMin_' + id, m); startTimer(id, m, false); };
   $('#tmClose').onclick = closeTimer;
   $('#tmStop').onclick = closeTimer;
   $('#tmPause').onclick = () => {
@@ -333,7 +332,7 @@ function bowl(t, f = 196, vol = 0.9, len = 6) {
   });
 }
 function gong() {
-  try { const c = ac(), t = c.currentTime + 0.05; bowl(t, 196); bowl(t + 2.2, 196); bowl(t + 4.4, 147, 1, 8); } catch { }
+  try { const c = ac(), t = c.currentTime + 0.05; bowl(t, 174.6, 1, 14); } catch { } // één slag die lang nagalmt
   if (navigator.vibrate) navigator.vibrate([400, 200, 400, 200, 600]);
 }
 const beep = gong;
