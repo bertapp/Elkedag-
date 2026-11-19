@@ -1,7 +1,7 @@
 // Elke Dag – app om dagelijkse gezonde gewoontes op te volgen.
 // Alles blijft op de telefoon zelf: gewoontes en vinkjes in localStorage, foto's in IndexedDB.
 
-const VERSION = 18;
+const VERSION = 19;
 const PREVIEW = !!window.PREVIEW; // voorbeeldversie: geen agenda-bestand, meldingen of kopieën
 const $ = s => document.querySelector(s);
 const main = $('#main');
@@ -346,6 +346,8 @@ function renderOverview() {
     <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Percentage gedaan per dag, laatste 14 dagen">${grid}${bars}</svg></div>`;
 
   // inzichten
+
+  html += `<div class="h2">Wat valt op</div><div class="card">${insights(lg, today).map(i => `<div class="insight"><div class="e">${i[0]}</div><div><b>${i[1]}</b><span class="small">${i[2]}</span></div></div>`).join('')}</div>`;
 
   // per gewoonte
   html += `<div class="h2">Per gewoonte · 30 dagen</div>`;
