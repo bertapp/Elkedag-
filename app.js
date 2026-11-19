@@ -1,7 +1,7 @@
 // Elke Dag – app om dagelijkse gezonde gewoontes op te volgen.
 // Alles blijft op de telefoon zelf: gewoontes en vinkjes in localStorage, foto's in IndexedDB.
 
-const VERSION = 20;
+const VERSION = 21;
 const PREVIEW = !!window.PREVIEW; // voorbeeldversie: geen agenda-bestand, meldingen of kopieën
 const $ = s => document.querySelector(s);
 const main = $('#main');
@@ -309,7 +309,7 @@ $('#photoInput').onchange = async e => {
 async function loadThumbs() {
   for (const img of main.querySelectorAll('img[data-photo]')) {
     const src = await photoGet(img.dataset.photo);
-    if (src) { img.src = src; img.closest('figure, .habit').addEventListener('click', ev => { if (ev.target.closest('.check, .editat, .editnote, .notebox, .notepill, .noteopen, input')) return; if (ev.target === img || img.closest('figure')) openViewer(src, img.dataset.cap); }); }
+    if (src) { img.src = src; (img.closest('figure, .habit, .prow') || img).addEventListener('click', ev => { if (ev.target.closest('.check, .editat, .editnote, .notebox, .notepill, .noteopen, input')) return; if (ev.target === img || img.closest('figure')) openViewer(src, img.dataset.cap); }); }
   }
 }
 function openViewer(src, cap) { $('#viewer img').src = src; $('#viewerCap').textContent = cap || ''; $('#viewer').style.display = 'flex'; }
@@ -339,12 +339,12 @@ function renderOverview() {
   for (let i = 0; i < 14; i++) {
     const d = addDays(today, i - 13), r = dayRate(lg, d) ?? 0, bh = Math.max(3, r * (H - pad - 10)), x = 4 + i * bw;
     bars += `<g class="daybar" data-off="${i - 13}" role="button" aria-label="Toon ${d.toLocaleDateString('nl-BE', { weekday: 'long', day: 'numeric', month: 'long' })}"><rect x="${x}" y="0" width="${bw}" height="${H}" fill="transparent"/>
-      <rect x="${x + 3}" y="${H - pad - bh}" width="${bw - 6}" height="${bh}" rx="4" fill="${i === 13 ? 'var(--brand-2)' : 'color-mix(in srgb,var(--brand-2) 55%,var(--line))'}"/>
+      <rect x="${x + 3}" y="${H - pad - bh}" width="${bw - 6}" height="${bh}" rx="4" fill="${sel.bar === i - 13 ? 'var(--gold)' : i === 13 ? 'var(--brand-2)' : 'color-mix(in srgb,var(--brand-2) 55%,var(--line))'}"/>
       <text x="${x + bw / 2}" y="${H - 4}" text-anchor="middle">${DAYS[d.getDay()].slice(0, 2)}</text></g>`;
   }
   const grid = [0, .5, 1].map(f => `<line x1="0" x2="${W}" y1="${H - pad - f * (H - pad - 10)}" y2="${H - pad - f * (H - pad - 10)}" stroke="var(--line)" stroke-dasharray="${f ? '3 3' : ''}"/>`).join('');
   html += `<div class="card chart"><div class="legend"><b>Laatste 2 weken</b><span class="small">tik op een dag</span></div>
-    <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Percentage gedaan per dag, laatste 14 dagen">${grid}${bars}</svg></div>`;
+    <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Percentage gedaan per dag, laatste 14 dagen">${grid}${bars}</svg>${sel.bar !== null ? dayPanel(lg, sel.bar) : ''}</div>`;
 
   // inzichten
 
@@ -367,14 +367,33 @@ function renderOverview() {
     const d = addDays(start, i);
     if (d > today) { cells += '<i style="background:transparent"></i>'; continue; }
     const r = dayRate(lg, d) ?? 0;
-    cells += `<i class="dayc" data-off="${Math.round((d - today) / 864e5)}" title="${dayKey(d)}" style="background:${r ? `color-mix(in srgb,var(--brand-2) ${Math.round(25 + r * 75)}%,var(--line))` : 'var(--line)'}"></i>`;
+    const off = Math.round((d - today) / 864e5);
+    cells += `<i class="dayc" data-off="${off}" title="${dayKey(d)}" style="${sel.heat === off ? 'outline:2px solid var(--gold);outline-offset:1px;' : ''}background:${r ? `color-mix(in srgb,var(--brand-2) ${Math.round(25 + r * 75)}%,var(--line))` : 'var(--line)'}"></i>`;
   }
   html += `<div class="h2">Laatste 12 weken</div><div class="card"><div class="heatwrap"><div class="heatdays">${['ma', '', 'wo', '', 'vr', '', 'zo'].map(x => `<span>${x}</span>`).join('')}</div>
-    <div class="heat" style="flex:1">${cells}</div></div><div class="small" style="margin-top:8px">Hoe donkerder, hoe meer je die dag gedaan hebt.</div></div>`;
+    <div class="heat" style="flex:1">${cells}</div></div><div class="small" style="margin-top:8px">Hoe donkerder, hoe meer je die dag gedaan hebt. Tik op een vakje.</div>${sel.heat !== null ? dayPanel(lg, sel.heat) : ''}</div>`;
 
   main.innerHTML = html;
-  main.querySelectorAll('.daybar, .dayc').forEach(el => el.onclick = () => { if (demo) return; dayOff = Number(el.dataset.off); tab = 'today'; render(true); });
+  main.querySelectorAll('.daybar, .dayc').forEach(el => el.onclick = () => {
+    const key = el.classList.contains('daybar') ? 'bar' : 'heat', off = Number(el.dataset.off);
+    sel[key] = sel[key] === off ? null : off; renderOverview();
+  });
+  main.querySelectorAll('.panel-go').forEach(b => b.onclick = () => { dayOff = Number(b.dataset.off); tab = 'today'; render(true); });
+  loadThumbs();
   const b = $('#demoBtn'); if (b) b.onclick = () => { demo = !demo; demoLog.cache = null; render(true); };
+}
+const sel = { bar: null, heat: null }; // aangetikte dag in het overzicht
+// klein paneel met de resultaten van één dag, onder de grafiek
+function dayPanel(lg, off) {
+  const d = addDays(new Date(), off), k = dayKey(d), done = lg[k] || {};
+  const list = sortedHabits().filter(h => scheduled(h, d) || done[h.id]);
+  const rows = list.map(h => { const e = done[h.id]; return `<div class="prow" style="--hc:${col(h)}"><span class="pmark ${e ? 'ok' : ''}">${e ? '✓' : '–'}</span>
+      <div style="flex:1;min-width:0"><b>${h.icon} ${esc(h.name)}</b>${e && e.note ? `<div class="small" style="white-space:pre-wrap">📝 ${esc(e.note)}</div>` : ''}</div>
+      ${e && e.photo && !demo ? `<img class="pthumb" data-photo="${e.photo}" data-cap="${esc(h.name)}" alt="">` : ''}</div>`; }).join('');
+  const n = list.filter(h => done[h.id]).length;
+  return `<div class="panel"><div class="legend" style="margin:0 0 6px"><b>${(t => t.charAt(0).toUpperCase() + t.slice(1))(d.toLocaleDateString('nl-BE', { weekday: 'long', day: 'numeric', month: 'long' }))}</b><span class="small">${list.length ? `${n} van ${list.length}` : 'niets gepland'}</span></div>
+    ${rows || '<div class="small">Op deze dag stond er niets gepland.</div>'}
+    ${demo ? '' : `<button class="addnote panel-go" data-off="${off}">Open deze dag ›</button>`}</div>`;
 }
 function insights(lg, today) {
   const out = [];

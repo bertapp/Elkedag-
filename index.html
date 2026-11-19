@@ -110,6 +110,12 @@ select,input[type=date],input[type=number]{width:100%;padding:12px;border-radius
 .notebox textarea{width:100%;padding:10px;border-radius:12px;border:1.5px solid var(--brand-2);background:var(--bg);color:var(--ink);font:inherit;font-size:16px;resize:vertical}
 .daybar,.dayc{cursor:pointer}
 .daybar:active rect+rect{opacity:.7}
+.panel{margin-top:12px;padding:12px;border-radius:14px;background:var(--bg);border:1.5px solid color-mix(in srgb,var(--gold) 60%,var(--line))}
+.prow{display:flex;gap:10px;align-items:center;padding:6px 0;border-top:1px solid var(--line)}
+.prow:first-of-type{border-top:none}
+.pmark{width:26px;height:26px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;font-weight:800;background:var(--line);color:var(--muted)}
+.pmark.ok{background:var(--hc);color:var(--on-brand)}
+.pthumb{width:40px;height:40px;border-radius:10px;object-fit:cover;flex:none;cursor:pointer}
 .daynav{display:flex;align-items:center;gap:8px;background:var(--card);border-radius:18px;padding:6px;box-shadow:var(--shadow)}
 .daynav button{border:none;background:transparent;border-radius:12px;cursor:pointer;font:inherit;font-weight:700;color:var(--brand-2);padding:8px 12px}
 .daynav #dPrev,.daynav #dNext{font-size:26px;line-height:1;width:48px;padding:6px 0;background:var(--soft)}
@@ -184,6 +190,6 @@ button.pill{border:none;cursor:pointer;font:inherit;font-size:12px;font-weight:7
 </nav>
 <div id="viewer"><img alt=""><p id="viewerCap"></p></div>
 <input type="file" id="photoInput" accept="image/*" capture="environment" hidden>
-<script src="app.js?v=20"></script>
+<script src="app.js?v=21"></script>
 </body>
 </html>
