@@ -1,7 +1,7 @@
 // Elke Dag – app om dagelijkse gezonde gewoontes op te volgen.
 // Alles blijft op de telefoon zelf: gewoontes en vinkjes in localStorage, foto's in IndexedDB.
 
-const VERSION = 17;
+const VERSION = 18;
 const PREVIEW = !!window.PREVIEW; // voorbeeldversie: geen agenda-bestand, meldingen of kopieën
 const $ = s => document.querySelector(s);
 const main = $('#main');
@@ -233,7 +233,7 @@ function renderToday() {
       <div class="icon">${h.icon}</div>
       <div class="info"><div class="name">${esc(h.name)}</div>
         <div class="meta">${whenText(h)}
-          ${d ? `<button class="pill editat" aria-label="Uur aanpassen">gedaan om ${d.at} ✎</button>` : late ? `<span class="pill late">${dayOff < 0 ? 'niet gedaan' : 'nog te doen'}</span>` : ''}
+          ${d ? '<span class="pill">gedaan</span>' : late ? `<span class="pill late">${dayOff < 0 ? 'niet gedaan' : 'nog te doen'}</span>` : ''}
           ${d && d.note ? `<button class="pill notepill ${openNotes.has(k + h.id) ? 'on' : ''}" aria-label="Toon wat je gedaan hebt">📝</button>` : ''}
           ${s >= 2 ? `<span class="pill fire">🔥 ${s} dagen</span>` : ''}</div>
         ${d ? (d.note ? (openNotes.has(k + h.id) ? `<div class="noteopen"><div class="note">${esc(d.note)}</div><button class="addnote editnote">✎ Aanpassen</button></div>` : '') : `<button class="addnote editnote">+ Wat heb je gedaan?</button>`) : ''}</div>
@@ -323,7 +323,6 @@ function renderOverview() {
   let html = '';
   if (!habits.length) { main.innerHTML = `<div class="card empty"><div class="big">📊</div>Voeg eerst een gewoonte toe.</div>`; return; }
   if (demo) html += `<div class="demo"><div style="flex:1">Dit zijn <b>voorbeeldgegevens</b>, zodat je ziet hoe het overzicht eruitziet.</div><button id="demoBtn">Toon mijn echte</button></div>`;
-  else if (days < 7) html += `<div class="demo"><div style="flex:1">Na een week afvinken wordt dit overzicht pas echt interessant.</div><button id="demoBtn">Toon voorbeeld</button></div>`;
 
   // tegels
   const wk = rangeRate(lg, addDays(today, -6), 7), prev = rangeRate(lg, addDays(today, -13), 7);
@@ -347,7 +346,6 @@ function renderOverview() {
     <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Percentage gedaan per dag, laatste 14 dagen">${grid}${bars}</svg></div>`;
 
   // inzichten
-  html += `<div class="h2">Wat valt op</div><div class="card">${insights(lg, today).map(i => `<div class="insight"><div class="e">${i[0]}</div><div><b>${i[1]}</b><span class="small">${i[2]}</span></div></div>`).join('')}</div>`;
 
   // per gewoonte
   html += `<div class="h2">Per gewoonte · 30 dagen</div>`;
