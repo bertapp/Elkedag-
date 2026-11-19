@@ -108,6 +108,8 @@ select,input[type=date],input[type=number]{width:100%;padding:12px;border-radius
 .notepill.on{background:var(--brand-2);color:var(--on-brand)}
 .notebox{display:flex;flex-direction:column;gap:8px;margin-top:8px}
 .notebox textarea{width:100%;padding:10px;border-radius:12px;border:1.5px solid var(--brand-2);background:var(--bg);color:var(--ink);font:inherit;font-size:16px;resize:vertical}
+.daybar,.dayc{cursor:pointer}
+.daybar:active rect+rect{opacity:.7}
 .daynav{display:flex;align-items:center;gap:8px;background:var(--card);border-radius:18px;padding:6px;box-shadow:var(--shadow)}
 .daynav button{border:none;background:transparent;border-radius:12px;cursor:pointer;font:inherit;font-weight:700;color:var(--brand-2);padding:8px 12px}
 .daynav #dPrev,.daynav #dNext{font-size:26px;line-height:1;width:48px;padding:6px 0;background:var(--soft)}
@@ -182,6 +184,6 @@ button.pill{border:none;cursor:pointer;font:inherit;font-size:12px;font-weight:7
 </nav>
 <div id="viewer"><img alt=""><p id="viewerCap"></p></div>
 <input type="file" id="photoInput" accept="image/*" capture="environment" hidden>
-<script src="app.js?v=19"></script>
+<script src="app.js?v=20"></script>
 </body>
 </html>

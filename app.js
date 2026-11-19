@@ -1,7 +1,7 @@
 // Elke Dag – app om dagelijkse gezonde gewoontes op te volgen.
 // Alles blijft op de telefoon zelf: gewoontes en vinkjes in localStorage, foto's in IndexedDB.
 
-const VERSION = 19;
+const VERSION = 20;
 const PREVIEW = !!window.PREVIEW; // voorbeeldversie: geen agenda-bestand, meldingen of kopieën
 const $ = s => document.querySelector(s);
 const main = $('#main');
@@ -338,11 +338,12 @@ function renderOverview() {
   let bars = '';
   for (let i = 0; i < 14; i++) {
     const d = addDays(today, i - 13), r = dayRate(lg, d) ?? 0, bh = Math.max(3, r * (H - pad - 10)), x = 4 + i * bw;
-    bars += `<rect x="${x + 3}" y="${H - pad - bh}" width="${bw - 6}" height="${bh}" rx="4" fill="${i === 13 ? 'var(--brand-2)' : 'color-mix(in srgb,var(--brand-2) 55%,var(--line))'}"/>`;
-    bars += `<text x="${x + bw / 2}" y="${H - 4}" text-anchor="middle">${DAYS[d.getDay()].slice(0, 2)}</text>`;
+    bars += `<g class="daybar" data-off="${i - 13}" role="button" aria-label="Toon ${d.toLocaleDateString('nl-BE', { weekday: 'long', day: 'numeric', month: 'long' })}"><rect x="${x}" y="0" width="${bw}" height="${H}" fill="transparent"/>
+      <rect x="${x + 3}" y="${H - pad - bh}" width="${bw - 6}" height="${bh}" rx="4" fill="${i === 13 ? 'var(--brand-2)' : 'color-mix(in srgb,var(--brand-2) 55%,var(--line))'}"/>
+      <text x="${x + bw / 2}" y="${H - 4}" text-anchor="middle">${DAYS[d.getDay()].slice(0, 2)}</text></g>`;
   }
   const grid = [0, .5, 1].map(f => `<line x1="0" x2="${W}" y1="${H - pad - f * (H - pad - 10)}" y2="${H - pad - f * (H - pad - 10)}" stroke="var(--line)" stroke-dasharray="${f ? '3 3' : ''}"/>`).join('');
-  html += `<div class="card chart"><div class="legend"><b>Laatste 2 weken</b><span class="small">% gedaan per dag</span></div>
+  html += `<div class="card chart"><div class="legend"><b>Laatste 2 weken</b><span class="small">tik op een dag</span></div>
     <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Percentage gedaan per dag, laatste 14 dagen">${grid}${bars}</svg></div>`;
 
   // inzichten
@@ -366,12 +367,13 @@ function renderOverview() {
     const d = addDays(start, i);
     if (d > today) { cells += '<i style="background:transparent"></i>'; continue; }
     const r = dayRate(lg, d) ?? 0;
-    cells += `<i title="${dayKey(d)}" style="background:${r ? `color-mix(in srgb,var(--brand-2) ${Math.round(25 + r * 75)}%,var(--line))` : 'var(--line)'}"></i>`;
+    cells += `<i class="dayc" data-off="${Math.round((d - today) / 864e5)}" title="${dayKey(d)}" style="background:${r ? `color-mix(in srgb,var(--brand-2) ${Math.round(25 + r * 75)}%,var(--line))` : 'var(--line)'}"></i>`;
   }
   html += `<div class="h2">Laatste 12 weken</div><div class="card"><div class="heatwrap"><div class="heatdays">${['ma', '', 'wo', '', 'vr', '', 'zo'].map(x => `<span>${x}</span>`).join('')}</div>
     <div class="heat" style="flex:1">${cells}</div></div><div class="small" style="margin-top:8px">Hoe donkerder, hoe meer je die dag gedaan hebt.</div></div>`;
 
   main.innerHTML = html;
+  main.querySelectorAll('.daybar, .dayc').forEach(el => el.onclick = () => { if (demo) return; dayOff = Number(el.dataset.off); tab = 'today'; render(true); });
   const b = $('#demoBtn'); if (b) b.onclick = () => { demo = !demo; demoLog.cache = null; render(true); };
 }
 function insights(lg, today) {
