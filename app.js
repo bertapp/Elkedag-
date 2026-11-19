@@ -1,7 +1,7 @@
 // Elke Dag – app om dagelijkse gezonde gewoontes op te volgen.
 // Alles blijft op de telefoon zelf: gewoontes en vinkjes in localStorage, foto's in IndexedDB.
 
-const VERSION = 23;
+const VERSION = 24;
 const PREVIEW = !!window.PREVIEW; // voorbeeldversie: geen agenda-bestand, meldingen of kopieën
 const $ = s => document.querySelector(s);
 const main = $('#main');
@@ -291,42 +291,87 @@ function openTimer(id) {
     <div class="tpick"><b>Hoe lang wil je het doen?</b>
       <div class="chips tmins">${[1, 2, 3, 5, 10, 15, 20].map(m => `<button class="chip ${m === last ? 'on' : ''}" data-m="${m}">${m}</button>`).join('')}</div>
       <div class="row" style="align-items:center"><input type="number" inputmode="numeric" min="1" max="180" id="tmCustom" value="${last}" aria-label="Aantal minuten"><span style="flex:0 0 auto">minuten</span></div>
+      <label class="anyt"><input type="checkbox" id="tmMusic" ${store.get('timerMusic', /zen/i.test(h.name)) ? 'checked' : ''}> 🎵 Rustige muziek tijdens de timer</label>
       <button class="btn" id="tmStart">▶ Start</button></div>
     <div class="trun" hidden>
       <div class="tring"><svg viewBox="0 0 200 200"><circle cx="100" cy="100" r="88" stroke="var(--line)" stroke-width="12" fill="none"/>
         <circle id="tmArc" cx="100" cy="100" r="88" stroke="var(--hc)" stroke-width="12" fill="none" stroke-linecap="round" stroke-dasharray="553" stroke-dashoffset="0" transform="rotate(-90 100 100)"/></svg>
         <b id="tmLeft">3:00</b></div>
       <div class="row"><button class="btn ghost" id="tmPause">⏸ Pauze</button><button class="btn ghost" id="tmStop">✕ Stop</button></div>
-      <p class="small" style="text-align:center;margin:0">Laat de app open staan, dan hoor je het signaal.</p></div>
+      <p class="small" style="text-align:center;margin:0">Laat de app open staan en zet je iPhone niet op stil, dan hoor je de muziek en de gong.</p></div>
     <button class="addnote" id="tmClose" style="align-self:center">Sluiten</button></div>`;
   document.body.appendChild(ov);
   ov.querySelectorAll('.tmins .chip').forEach(b => b.onclick = () => { ov.querySelectorAll('.tmins .chip').forEach(x => x.classList.toggle('on', x === b)); $('#tmCustom').value = b.dataset.m; });
-  $('#tmStart').onclick = () => { const m = Math.max(1, Math.min(180, parseInt($('#tmCustom').value, 10) || 3)); store.set('timerMin_' + id, m); startTimer(id, m); };
+  $('#tmStart').onclick = () => { const m = Math.max(1, Math.min(180, parseInt($('#tmCustom').value, 10) || 3)); store.set('timerMin_' + id, m); store.set('timerMusic', $('#tmMusic').checked); startTimer(id, m, $('#tmMusic').checked); };
   $('#tmClose').onclick = closeTimer;
   $('#tmStop').onclick = closeTimer;
   $('#tmPause').onclick = () => {
     if (!timer) return;
-    if (timer.paused) { timer.end = Date.now() + timer.left; timer.paused = false; $('#tmPause').textContent = '⏸ Pauze'; }
-    else { timer.left = timer.end - Date.now(); timer.paused = true; $('#tmPause').textContent = '▶ Verder'; }
+    if (timer.paused) { timer.end = Date.now() + timer.left; timer.paused = false; $('#tmPause').textContent = '⏸ Pauze'; if (timer.music) startMusic(); }
+    else { timer.left = timer.end - Date.now(); timer.paused = true; $('#tmPause').textContent = '▶ Verder'; stopMusic(); }
   };
 }
-let audioCtx = null;
-function beep(times = 3) {
-  try {
-    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
-    for (let i = 0; i < times; i++) {
-      const o = audioCtx.createOscillator(), g = audioCtx.createGain(), t = audioCtx.currentTime + i * 0.45;
-      o.frequency.value = 880; o.connect(g); g.connect(audioCtx.destination);
-      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.4, t + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.35);
-      o.start(t); o.stop(t + 0.4);
-    }
-  } catch { }
-  if (navigator.vibrate) navigator.vibrate([300, 150, 300, 150, 300]);
+// ---------- klank: gong aan het einde en rustige muziek tijdens de timer (alles zelf opgewekt, geen bestanden) ----------
+let audioCtx = null, master = null, music = null;
+function ac() {
+  if (!audioCtx) {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const comp = audioCtx.createDynamicsCompressor(); comp.threshold.value = -18; comp.ratio.value = 4;
+    master = audioCtx.createGain(); master.gain.value = 1; master.connect(comp); comp.connect(audioCtx.destination);
+  }
+  audioCtx.resume?.(); return audioCtx;
 }
-async function startTimer(id, m) {
-  try { audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)(); audioCtx.resume(); } catch { } // geluid "ontgrendelen" bij de tik
+// één klankschaal-slag: grondtoon + boventonen die traag uitsterven
+function bowl(t, f = 196, vol = 0.9, len = 6) {
+  const c = ac();
+  [[1, 1], [2.76, 0.45], [5.4, 0.22], [8.9, 0.1]].forEach(([m, v], i) => {
+    const o = c.createOscillator(), g = c.createGain();
+    o.type = 'sine'; o.frequency.value = f * m; o.detune.value = (i % 2 ? 4 : -4);
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol * v, t + 0.015);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + len / (1 + i * 0.6));
+    o.connect(g); g.connect(master); o.start(t); o.stop(t + len);
+  });
+}
+function gong() {
+  try { const c = ac(), t = c.currentTime + 0.05; bowl(t, 196); bowl(t + 2.2, 196); bowl(t + 4.4, 147, 1, 8); } catch { }
+  if (navigator.vibrate) navigator.vibrate([400, 200, 400, 200, 600]);
+}
+const beep = gong;
+// rustige muziek: zachte akkoorden die langzaam wisselen, met af en toe een belletje
+function startMusic() {
+  try {
+    stopMusic();
+    const c = ac(), out = c.createGain(); out.gain.value = 0.0001; out.connect(master);
+    out.gain.exponentialRampToValueAtTime(0.35, c.currentTime + 3);
+    const chords = [[220, 261.6, 329.6], [174.6, 220, 261.6], [196, 246.9, 293.7], [164.8, 196, 246.9]];
+    const bells = [440, 493.9, 587.3, 659.3, 784];
+    const voices = [0, 1, 2].map(i => {
+      const o = c.createOscillator(), o2 = c.createOscillator(), g = c.createGain();
+      o.type = 'sine'; o2.type = 'triangle'; o2.detune.value = 7; g.gain.value = 0.12;
+      o.connect(g); o2.connect(g); g.connect(out); o.start(); o2.start(); return { o, o2, g };
+    });
+    const lfo = c.createOscillator(), lg = c.createGain(); lfo.frequency.value = 0.08; lg.gain.value = 0.05; lfo.connect(lg); voices.forEach(v => lg.connect(v.g.gain)); lfo.start();
+    let n = 0;
+    const step = () => {
+      const ch = chords[n++ % chords.length], t = c.currentTime;
+      voices.forEach((v, i) => { v.o.frequency.setTargetAtTime(ch[i], t, 1.5); v.o2.frequency.setTargetAtTime(ch[i] / 2, t, 1.5); });
+      if (Math.random() < 0.7) { const f = bells[Math.floor(Math.random() * bells.length)]; const o = c.createOscillator(), g = c.createGain(); o.type = 'sine'; o.frequency.value = f; g.gain.setValueAtTime(0.0001, t + 1); g.gain.exponentialRampToValueAtTime(0.08, t + 1.05); g.gain.exponentialRampToValueAtTime(0.0001, t + 5); o.connect(g); g.connect(out); o.start(t + 1); o.stop(t + 5.2); }
+    };
+    step();
+    music = { out, voices, lfo, iv: setInterval(step, 8000) };
+  } catch { }
+}
+function stopMusic() {
+  if (!music) return;
+  const m = music; music = null; clearInterval(m.iv);
+  try { const t = audioCtx.currentTime; m.out.gain.cancelScheduledValues(t); m.out.gain.setValueAtTime(Math.max(0.0001, m.out.gain.value), t); m.out.gain.exponentialRampToValueAtTime(0.0001, t + 1.5);
+    setTimeout(() => { m.voices.forEach(v => { v.o.stop(); v.o2.stop(); }); m.lfo.stop(); m.out.disconnect(); }, 1700); } catch { }
+}
+async function startTimer(id, m, withMusic) {
+  try { ac(); } catch { } // geluid "ontgrendelen" bij de tik
+  if (withMusic) startMusic();
   const ov = $('#timerOv'); ov.querySelector('.tpick').hidden = true; ov.querySelector('.trun').hidden = false; $('#tmClose').hidden = true;
-  timer = { id, total: m * 60000, end: Date.now() + m * 60000, paused: false, left: 0, min: m };
+  timer = { id, total: m * 60000, end: Date.now() + m * 60000, paused: false, left: 0, min: m, music: withMusic };
   try { timer.lock = await navigator.wakeLock?.request('screen'); } catch { }
   const tick = () => {
     if (!timer) return;
@@ -352,7 +397,7 @@ function finishTimer() {
   }
   dayOff = 0; render();
 }
-function stopTimerOnly() { if (!timer) return; cancelAnimationFrame(timer.tick); try { timer.lock?.release(); } catch { } timer = null; }
+function stopTimerOnly() { stopMusic(); if (!timer) return; cancelAnimationFrame(timer.tick); try { timer.lock?.release(); } catch { } timer = null; }
 function closeTimer() { stopTimerOnly(); $('#timerOv')?.remove(); render(); }
 
 function editNote(el, k, id) {
